@@ -1,4 +1,3 @@
-import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
@@ -27,36 +26,20 @@ export interface GitCommandOptions {
  * All Git commands are funneled through this class for testability and consistent error handling.
  */
 export class GitCLI {
+    private static readonly DEFAULT_TIMEOUT = 30000; // 30 seconds
     private logger: Logger;
+    private defaultTimeout: number;
 
-    constructor(logger: Logger) {
+    constructor(logger: Logger, defaultTimeout?: number) {
         this.logger = logger;
+        this.defaultTimeout = defaultTimeout || GitCLI.DEFAULT_TIMEOUT;
     }
 
     /**
-     * Execute a Git command with the given arguments (public interface)
-     * @param args Git command arguments
-     * @param cwd Working directory (optional)
-     * @param signal AbortSignal for cancellation (optional)
-     * @returns Promise resolving to command output
-     */
-    async execute(args: string[], cwd?: string, signal?: AbortSignal): Promise<string> {
-        return this.executeGit(args, { cwd, signal });
-    }
-
-    /**
-     * Execute a Git command with the given arguments (internal implementation)
-     * @param args Git command arguments
-     * @param options Command options
-     * @returns Promise resolving to command output
+     * Execute a Git command with the given arguments
      */
     private async executeGit(args: string[], options: GitCommandOptions = {}): Promise<string> {
-        // Get timeout from configuration
-        const config = vscode.workspace.getConfiguration('worktreeSwitcher');
-        const timeoutSeconds = config.get<number>('gitTimeout', 30);
-        const timeout = timeoutSeconds * 1000;
-
-        const { cwd, signal } = options;
+        const { cwd, timeout = this.defaultTimeout, signal } = options;
         
         // Mask sensitive paths in logs
         const maskedArgs = args.map(arg => 

@@ -26,29 +26,26 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = void 0;
 const vscode = __importStar(require("vscode"));
 const logger_1 = require("./utils/logger");
+const configurationService_1 = require("./services/configurationService");
 const worktreeService_1 = require("./services/worktreeService");
 const worktreeProvider_1 = require("./providers/worktreeProvider");
 const commandController_1 = require("./controllers/commandController");
 const statusBarManager_1 = require("./ui/statusBarManager");
-const telemetryService_1 = require("./services/telemetryService");
 let logger;
-let telemetryService;
 let worktreeService;
 let worktreeProvider;
 let commandController;
 let statusBarManager;
-async function activate(context) {
-    const activationStart = Date.now();
+function activate(context) {
     // Initialize logger
     logger = new logger_1.Logger('WorktreeSwitcher');
     logger.info('Activating Worktree Switcher extension...');
-    // Initialize telemetry service
-    telemetryService = new telemetryService_1.TelemetryService(logger, 'vscode-worktree-switcher');
     try {
         // Initialize core services
-        worktreeService = new worktreeService_1.WorktreeService(logger, telemetryService);
+        const configService = new configurationService_1.ConfigurationService(logger);
+        worktreeService = new worktreeService_1.WorktreeService(logger, configService);
         worktreeProvider = new worktreeProvider_1.WorktreeProvider(worktreeService, logger);
-        commandController = new commandController_1.CommandController(worktreeService, logger, telemetryService);
+        commandController = new commandController_1.CommandController(worktreeService, logger, configService);
         statusBarManager = new statusBarManager_1.StatusBarManager(worktreeService, logger);
         // Register tree data provider
         const treeView = vscode.window.createTreeView('worktreeExplorer', {
@@ -64,30 +61,21 @@ async function activate(context) {
             vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh())
         ];
         // Add all disposables to context
-        context.subscriptions.push(treeView, ...commands, statusBarManager, telemetryService, logger);
+        context.subscriptions.push(treeView, configService, ...commands, worktreeService, worktreeProvider, commandController, statusBarManager, logger);
         // Initial refresh to populate the tree view
-        await worktreeService.refresh();
-        // Send activation telemetry
-        const activationTime = Date.now() - activationStart;
-        const gitVersion = await worktreeService.getGitVersion().catch(() => 'unknown');
-        telemetryService.sendActivationEvent(activationTime, gitVersion);
-        logger.info(`Worktree Switcher extension activated successfully in ${activationTime}ms`);
-        logger.info(`Telemetry: ${telemetryService.isEnabledStatus() ? 'enabled' : 'disabled'}`);
+        worktreeService.refresh();
+        logger.info('Worktree Switcher extension activated successfully');
     }
     catch (error) {
         logger.error('Failed to activate extension', error);
-        telemetryService?.sendErrorEvent('activation_failed');
         vscode.window.showErrorMessage('Failed to activate Worktree Switcher extension. Check the output panel for details.');
     }
 }
 exports.activate = activate;
 function deactivate() {
     logger?.info('Deactivating Worktree Switcher extension...');
-    // Send deactivation telemetry
-    telemetryService?.sendEvent('extension.deactivated');
     // Cleanup resources
     worktreeService?.dispose();
-    telemetryService?.dispose();
     worktreeProvider?.dispose();
     commandController?.dispose();
     statusBarManager?.dispose();

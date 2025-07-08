@@ -32,23 +32,15 @@ const fs = __importStar(require("fs"));
  * Orchestrates QuickPick UI, input dialogs, and error handling.
  */
 class CommandController {
-    constructor(worktreeService, logger, telemetryService) {
+    constructor(worktreeService, logger, configService) {
         this.worktreeService = worktreeService;
         this.logger = logger;
-        this.telemetryService = telemetryService;
+        this.configService = configService;
     }
     /**
      * Show QuickPick to switch between worktrees
      */
     async switchWorktree() {
-        return this.executeWithTelemetry('switchWorktree', async () => {
-            return this.switchWorktreeImpl();
-        });
-    }
-    /**
-     * Implementation of switch worktree functionality
-     */
-    async switchWorktreeImpl() {
         try {
             const worktrees = this.worktreeService.getWorktrees();
             if (worktrees.length === 0) {
@@ -84,7 +76,8 @@ class CommandController {
                 title: 'Switch Worktree'
             });
             if (selected) {
-                await this.worktreeService.switchWorktree(selected.worktree.path);
+                const openInNewWindow = this.configService.shouldOpenInNewWindow();
+                await this.worktreeService.switchWorktree(selected.worktree.path, openInNewWindow);
             }
         }
         catch (error) {
@@ -165,7 +158,8 @@ class CommandController {
             }
             // Step 2: Get worktree location
             const defaultLocation = this.worktreeService.getDefaultWorktreeLocation();
-            const suggestedPath = path.join(defaultLocation, branchName.replace(/[^a-zA-Z0-9-_]/g, '-'));
+            const worktreeName = this.configService.generateWorktreeName(branchName);
+            const suggestedPath = path.join(defaultLocation, worktreeName);
             const worktreePath = await vscode.window.showInputBox({
                 prompt: 'Enter the path for the new worktree',
                 value: suggestedPath,
@@ -248,14 +242,17 @@ class CommandController {
                 }
                 worktreeToRemove = selected.worktree;
             }
-            // Confirm removal
-            const confirmMessage = `Are you sure you want to remove the worktree "${worktreeToRemove.name}"?\n\nPath: ${worktreeToRemove.path}`;
-            const forceOption = worktreeToRemove.status.clean ? undefined : 'Force Remove';
-            const options = ['Remove', 'Cancel'];
-            if (forceOption) {
-                options.splice(1, 0, forceOption);
+            // Confirm removal (if configured to do so)
+            let choice = 'Remove';
+            if (this.configService.shouldConfirmDangerousOperations()) {
+                const confirmMessage = `Are you sure you want to remove the worktree "${worktreeToRemove.name}"?\n\nPath: ${worktreeToRemove.path}`;
+                const forceOption = worktreeToRemove.status.clean ? undefined : 'Force Remove';
+                const options = ['Remove', 'Cancel'];
+                if (forceOption) {
+                    options.splice(1, 0, forceOption);
+                }
+                choice = await vscode.window.showWarningMessage(confirmMessage, { modal: true }, ...options) || 'Cancel';
             }
-            const choice = await vscode.window.showWarningMessage(confirmMessage, { modal: true }, ...options);
             if (choice === 'Cancel' || !choice) {
                 return;
             }
@@ -388,24 +385,6 @@ class CommandController {
             return '🌟'; // Main/master branch
         }
         return '🌿'; // Generic branch/worktree
-    }
-    /**
-     * Execute a command with telemetry tracking
-     */
-    async executeWithTelemetry(commandName, operation) {
-        const startTime = Date.now();
-        try {
-            const result = await operation();
-            const duration = Date.now() - startTime;
-            this.telemetryService?.sendCommandEvent(commandName, true, duration);
-            return result;
-        }
-        catch (error) {
-            const duration = Date.now() - startTime;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            this.telemetryService?.sendCommandEvent(commandName, false, duration, errorMessage);
-            throw error;
-        }
     }
     dispose() {
         // No resources to dispose

@@ -1,39 +1,30 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { WorktreeService, WorktreeInfo } from '../services/worktreeService';
+import { WorktreeService } from '../services/worktreeService';
 import { WorktreeItem } from '../providers/worktreeProvider';
 import { Logger } from '../utils/logger';
-import { TelemetryService } from '../services/telemetryService';
+import { ConfigurationService } from '../services/configurationService';
 
 /**
  * Controller for handling VS Code commands related to worktrees.
  * Orchestrates QuickPick UI, input dialogs, and error handling.
  */
 export class CommandController implements vscode.Disposable {
-    private readonly worktreeService: WorktreeService;
-    private readonly logger: Logger;
-    private readonly telemetryService?: TelemetryService;
+    private worktreeService: WorktreeService;
+    private logger: Logger;
+    private configService: ConfigurationService;
 
-    constructor(worktreeService: WorktreeService, logger: Logger, telemetryService?: TelemetryService) {
+    constructor(worktreeService: WorktreeService, logger: Logger, configService: ConfigurationService) {
         this.worktreeService = worktreeService;
         this.logger = logger;
-        this.telemetryService = telemetryService;
+        this.configService = configService;
     }
 
     /**
      * Show QuickPick to switch between worktrees
      */
     async switchWorktree(): Promise<void> {
-        return this.executeWithTelemetry('switchWorktree', async () => {
-            return this.switchWorktreeImpl();
-        });
-    }
-
-    /**
-     * Implementation of switch worktree functionality
-     */
-    private async switchWorktreeImpl(): Promise<void> {
         try {
             const worktrees = this.worktreeService.getWorktrees();
             
@@ -79,7 +70,8 @@ export class CommandController implements vscode.Disposable {
             });
 
             if (selected) {
-                await this.worktreeService.switchWorktree(selected.worktree.path);
+                const openInNewWindow = this.configService.shouldOpenInNewWindow();
+                await this.worktreeService.switchWorktree(selected.worktree.path, openInNewWindow);
             }
         } catch (error) {
             this.logger.error('Failed to switch worktree', error);
@@ -173,7 +165,8 @@ export class CommandController implements vscode.Disposable {
 
             // Step 2: Get worktree location
             const defaultLocation = this.worktreeService.getDefaultWorktreeLocation();
-            const suggestedPath = path.join(defaultLocation, branchName.replace(/[^a-zA-Z0-9-_]/g, '-'));
+            const worktreeName = this.configService.generateWorktreeName(branchName);
+            const suggestedPath = path.join(defaultLocation, worktreeName);
 
             const worktreePath = await vscode.window.showInputBox({
                 prompt: 'Enter the path for the new worktree',
@@ -277,19 +270,22 @@ export class CommandController implements vscode.Disposable {
                 worktreeToRemove = selected.worktree;
             }
 
-            // Confirm removal
-            const confirmMessage = `Are you sure you want to remove the worktree "${worktreeToRemove.name}"?\n\nPath: ${worktreeToRemove.path}`;
-            const forceOption = worktreeToRemove.status.clean ? undefined : 'Force Remove';
-            const options = ['Remove', 'Cancel'];
-            if (forceOption) {
-                options.splice(1, 0, forceOption);
-            }
+            // Confirm removal (if configured to do so)
+            let choice = 'Remove';
+            if (this.configService.shouldConfirmDangerousOperations()) {
+                const confirmMessage = `Are you sure you want to remove the worktree "${worktreeToRemove.name}"?\n\nPath: ${worktreeToRemove.path}`;
+                const forceOption = worktreeToRemove.status.clean ? undefined : 'Force Remove';
+                const options = ['Remove', 'Cancel'];
+                if (forceOption) {
+                    options.splice(1, 0, forceOption);
+                }
 
-            const choice = await vscode.window.showWarningMessage(
-                confirmMessage,
-                { modal: true },
-                ...options
-            );
+                choice = await vscode.window.showWarningMessage(
+                    confirmMessage,
+                    { modal: true },
+                    ...options
+                ) || 'Cancel';
+            }
 
             if (choice === 'Cancel' || !choice) {
                 return;
@@ -440,28 +436,6 @@ export class CommandController implements vscode.Disposable {
             return '🌟'; // Main/master branch
         }
         return '🌿'; // Generic branch/worktree
-    }
-
-    /**
-     * Execute a command with telemetry tracking
-     */
-    private async executeWithTelemetry<T>(
-        commandName: string,
-        operation: () => Promise<T>
-    ): Promise<T | undefined> {
-        const startTime = Date.now();
-        
-        try {
-            const result = await operation();
-            const duration = Date.now() - startTime;
-            this.telemetryService?.sendCommandEvent(commandName, true, duration);
-            return result;
-        } catch (error) {
-            const duration = Date.now() - startTime;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            this.telemetryService?.sendCommandEvent(commandName, false, duration, errorMessage);
-            throw error;
-        }
     }
 
     dispose(): void {

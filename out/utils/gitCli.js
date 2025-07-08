@@ -24,7 +24,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitCLI = void 0;
-const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const path = __importStar(require("path"));
@@ -34,31 +33,15 @@ const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
  * All Git commands are funneled through this class for testability and consistent error handling.
  */
 class GitCLI {
-    constructor(logger) {
+    constructor(logger, defaultTimeout) {
         this.logger = logger;
+        this.defaultTimeout = defaultTimeout || GitCLI.DEFAULT_TIMEOUT;
     }
     /**
-     * Execute a Git command with the given arguments (public interface)
-     * @param args Git command arguments
-     * @param cwd Working directory (optional)
-     * @param signal AbortSignal for cancellation (optional)
-     * @returns Promise resolving to command output
-     */
-    async execute(args, cwd, signal) {
-        return this.executeGit(args, { cwd, signal });
-    }
-    /**
-     * Execute a Git command with the given arguments (internal implementation)
-     * @param args Git command arguments
-     * @param options Command options
-     * @returns Promise resolving to command output
+     * Execute a Git command with the given arguments
      */
     async executeGit(args, options = {}) {
-        // Get timeout from configuration
-        const config = vscode.workspace.getConfiguration('worktreeSwitcher');
-        const timeoutSeconds = config.get('gitTimeout', 30);
-        const timeout = timeoutSeconds * 1000;
-        const { cwd, signal } = options;
+        const { cwd, timeout = this.defaultTimeout, signal } = options;
         // Mask sensitive paths in logs
         const maskedArgs = args.map(arg => arg.includes('/') ? path.basename(arg) : arg);
         this.logger.debug(`Executing git command: git ${maskedArgs.join(' ')}`, { cwd });
@@ -254,4 +237,5 @@ class GitCLI {
     }
 }
 exports.GitCLI = GitCLI;
+GitCLI.DEFAULT_TIMEOUT = 30000; // 30 seconds
 //# sourceMappingURL=gitCli.js.map

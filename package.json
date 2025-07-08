@@ -112,15 +112,52 @@
           "maximum": 120,
           "description": "Git command timeout in seconds"
         },
-        "worktreeSwitcher.defaultWorktreeLocation": {
+        "worktreeSwitcher.worktreeNamePattern": {
           "type": "string",
-          "default": "",
-          "description": "Default directory for creating new worktrees (empty = use repository parent directory)"
+          "default": "{branchName}",
+          "description": "Pattern for naming new worktrees. Available variables: {branchName}, {timestamp}, {username}"
         },
-        "worktreeSwitcher.enableTelemetry": {
+        "worktreeSwitcher.excludeBranches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["HEAD", "refs/stash"],
+          "description": "Branch patterns to exclude from worktree operations (supports glob patterns)"
+        },
+        "worktreeSwitcher.confirmDangerousOperations": {
           "type": "boolean",
           "default": true,
-          "description": "Enable extension telemetry (respects VS Code telemetry settings)"
+          "description": "Show confirmation dialogs for potentially destructive operations"
+        },
+        "worktreeSwitcher.openInNewWindow": {
+          "type": "string",
+          "enum": ["always", "never", "ask"],
+          "default": "ask",
+          "description": "Behavior when opening worktrees: always open in new window, never (reuse current), or ask user"
+        },
+        "worktreeSwitcher.maxWorktrees": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of worktrees to display in lists"
+        },
+        "worktreeSwitcher.sortWorktreesBy": {
+          "type": "string",
+          "enum": ["name", "lastModified", "creationDate", "branchName"],
+          "default": "name",
+          "description": "How to sort worktrees in the tree view and quick pick"
+        },
+        "worktreeSwitcher.showHiddenBranches": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show hidden branches (those starting with dots) in worktree operations"
+        },
+        "worktreeSwitcher.autoCleanupStale": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically clean up stale worktree references during refresh"
         }
       }
     }

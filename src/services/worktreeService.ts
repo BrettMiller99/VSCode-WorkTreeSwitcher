@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { GitCLI, GitWorktree } from '../utils/gitCli';
 import { Logger } from '../utils/logger';
-import { TelemetryService } from './telemetryService';
+import { ConfigurationService } from './configurationService';
 
 export interface WorktreeInfo extends GitWorktree {
     name: string;
@@ -22,31 +22,31 @@ export interface WorktreeInfo extends GitWorktree {
  * Emits events when worktree state changes.
  */
 export class WorktreeService implements vscode.Disposable {
-    private readonly gitCli: GitCLI;
-    private readonly logger: Logger;
-    private readonly telemetryService?: TelemetryService;
-    private readonly _onDidChangeWorktrees = new vscode.EventEmitter<WorktreeInfo[]>();
+    private gitCli: GitCLI;
+    private logger: Logger;
+    private configService: ConfigurationService;
     private worktrees: WorktreeInfo[] = [];
     private repositoryRoot: string | null = null;
-    private autoRefreshTimer: NodeJS.Timeout | null = null;
     private abortController: AbortController | null = null;
+    private autoRefreshTimer: NodeJS.Timeout | null = null;
     private isRefreshing: boolean = false;
 
-    readonly onDidChangeWorktrees = this._onDidChangeWorktrees.event;
+    private readonly _onDidChangeWorktrees = new vscode.EventEmitter<WorktreeInfo[]>();
+    public readonly onDidChangeWorktrees = this._onDidChangeWorktrees.event;
 
-    constructor(logger: Logger, telemetryService?: TelemetryService) {
+    constructor(logger: Logger, configService: ConfigurationService) {
         this.logger = logger;
-        this.telemetryService = telemetryService;
-        this.gitCli = new GitCLI(logger);
+        this.configService = configService;
+        this.gitCli = new GitCLI(logger, configService.getGitTimeoutMs());
         
         // Set up auto-refresh based on configuration
         this.setupAutoRefresh();
         
         // Listen for configuration changes
-        vscode.workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration('worktreeSwitcher.autoRefresh')) {
-                this.setupAutoRefresh();
-            }
+        this.configService.onConfigurationChanged((config) => {
+            this.setupAutoRefresh();
+            // Update GitCLI timeout if needed
+            this.gitCli = new GitCLI(logger, config.gitTimeout * 1000);
         });
     }
 
@@ -174,9 +174,6 @@ export class WorktreeService implements vscode.Disposable {
             this._onDidChangeWorktrees.fire(this.worktrees);
             
             this.logger.debug(`Found ${this.worktrees.length} worktrees`);
-            
-            // Send telemetry for successful refresh
-            this.telemetryService?.sendWorktreeEvent('refresh', true, this.worktrees.length);
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
                 this.logger.debug('Worktree refresh was cancelled');
@@ -195,13 +192,37 @@ export class WorktreeService implements vscode.Disposable {
      * Get the current list of worktrees
      */
     getWorktrees(): WorktreeInfo[] {
-        return [...this.worktrees];
+        const sortedWorktrees = [...this.worktrees];
+        const sortBy = this.configService.getSortWorktreesBy();
+        const maxWorktrees = this.configService.getMaxWorktrees();
+        
+        // Sort worktrees based on configuration
+        sortedWorktrees.sort((a, b) => {
+            switch (sortBy) {
+                case 'name':
+                    return a.name.localeCompare(b.name);
+                case 'branchName':
+                    const branchA = a.currentBranch || a.branch || '';
+                    const branchB = b.currentBranch || b.branch || '';
+                    return branchA.localeCompare(branchB);
+                case 'lastModified':
+                case 'creationDate':
+                    // For now, fall back to name sorting
+                    // TODO: Implement file system stat-based sorting
+                    return a.name.localeCompare(b.name);
+                default:
+                    return 0;
+            }
+        });
+        
+        // Limit the number of worktrees returned
+        return sortedWorktrees.slice(0, maxWorktrees);
     }
 
     /**
-     * Switch to a worktree by opening it in a new VS Code window
+     * Switch to a worktree by opening it in VS Code
      */
-    async switchWorktree(worktreePath: string): Promise<void> {
+    async switchWorktree(worktreePath: string, forceNewWindow?: boolean): Promise<void> {
         try {
             this.logger.info(`Switching to worktree: ${worktreePath}`);
             
@@ -210,9 +231,10 @@ export class WorktreeService implements vscode.Disposable {
                 throw new Error(`Worktree path does not exist: ${worktreePath}`);
             }
 
-            // Open the worktree in a new window
+            // Open the worktree in a new window or current window based on configuration
             const uri = vscode.Uri.file(worktreePath);
-            await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: true });
+            const openInNewWindow = forceNewWindow ?? true; // Default to new window for backward compatibility
+            await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: openInNewWindow });
             
             this.logger.info(`Successfully switched to worktree: ${worktreePath}`);
         } catch (error) {
@@ -291,10 +313,27 @@ export class WorktreeService implements vscode.Disposable {
         }
 
         try {
-            return await this.gitCli.listBranches(
+            const allBranches = await this.gitCli.listBranches(
                 this.repositoryRoot,
                 this.abortController?.signal
             );
+            
+            // Filter branches based on configuration
+            const filteredBranches = allBranches.filter(branch => {
+                // Check if branch should be excluded
+                if (this.configService.shouldExcludeBranch(branch)) {
+                    return false;
+                }
+                
+                // Check if hidden branches should be shown
+                if (branch.startsWith('.') && !this.configService.shouldShowHiddenBranches()) {
+                    return false;
+                }
+                
+                return true;
+            });
+            
+            return filteredBranches;
         } catch (error) {
             this.logger.error('Failed to get branches', error);
             throw error;
@@ -331,8 +370,7 @@ export class WorktreeService implements vscode.Disposable {
             this.autoRefreshTimer = null;
         }
 
-        const config = vscode.workspace.getConfiguration('worktreeSwitcher');
-        const autoRefreshMinutes = config.get<number>('autoRefresh', 5);
+        const autoRefreshMinutes = this.configService.get<number>('autoRefresh');
         
         if (autoRefreshMinutes > 0) {
             const intervalMs = autoRefreshMinutes * 60 * 1000;
@@ -359,20 +397,5 @@ export class WorktreeService implements vscode.Disposable {
         
         // Dispose event emitter
         this._onDidChangeWorktrees.dispose();
-    }
-
-    /**
-     * Get Git version for telemetry and compatibility checking
-     */
-    async getGitVersion(): Promise<string> {
-        try {
-            const result = await this.gitCli.execute(['--version']);
-            // Extract version from "git version 2.39.0" format
-            const match = result.match(/git version ([\d\.]+)/);
-            return match ? match[1] : result.trim();
-        } catch (error) {
-            this.logger.debug('Failed to get Git version', error);
-            throw error;
-        }
     }
 }
