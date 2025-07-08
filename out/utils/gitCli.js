@@ -190,6 +190,55 @@ class GitCLI {
             .filter(branch => !branch.startsWith('origin/HEAD'));
     }
     /**
+     * Reset all changes in a worktree (git reset --hard)
+     */
+    async resetHard(worktreePath, signal) {
+        await this.executeGit(['reset', '--hard'], { cwd: worktreePath, signal });
+    }
+    /**
+     * Clean untracked files in a worktree (git clean -fd)
+     */
+    async clean(worktreePath, signal) {
+        await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+    }
+    /**
+     * Get detailed status including untracked files
+     */
+    async getStatus(worktreePath, signal) {
+        try {
+            const stdout = await this.executeGit(['status', '--porcelain'], { cwd: worktreePath, signal });
+            const lines = stdout.trim().split('\n').filter(line => line.length > 0);
+            let staged = 0;
+            let unstaged = 0;
+            let untracked = 0;
+            for (const line of lines) {
+                const stagedChar = line[0];
+                const unstagedChar = line[1];
+                if (stagedChar === '?' && unstagedChar === '?') {
+                    untracked++;
+                }
+                else {
+                    if (stagedChar !== ' ' && stagedChar !== '?') {
+                        staged++;
+                    }
+                    if (unstagedChar !== ' ' && unstagedChar !== '?') {
+                        unstaged++;
+                    }
+                }
+            }
+            return {
+                clean: lines.length === 0,
+                staged,
+                unstaged,
+                untracked
+            };
+        }
+        catch (error) {
+            this.logger.warn(`Failed to get detailed status for worktree: ${worktreePath}`, error);
+            return { clean: false, staged: 0, unstaged: 0, untracked: 0 };
+        }
+    }
+    /**
      * Parse the output of 'git worktree list --porcelain'
      */
     parseWorktreeList(output) {

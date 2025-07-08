@@ -384,6 +384,86 @@ export class WorktreeService implements vscode.Disposable {
         }
     }
 
+    /**
+     * Discard all uncommitted changes in a worktree
+     */
+    async discardWorktreeChanges(worktreePath: string): Promise<void> {
+        if (!this.repositoryRoot) {
+            throw new Error('No Git repository found');
+        }
+
+        try {
+            this.logger.info(`Discarding changes in worktree: ${worktreePath}`);
+            
+            // Reset all staged and unstaged changes
+            await this.gitCli.resetHard(
+                worktreePath,
+                this.abortController?.signal
+            );
+            
+            // Clean untracked files
+            await this.gitCli.clean(
+                worktreePath,
+                this.abortController?.signal
+            );
+            
+            this.logger.info(`Successfully discarded changes in worktree: ${worktreePath}`);
+        } catch (error) {
+            this.logger.error(`Failed to discard changes in worktree: ${worktreePath}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Clean untracked files in a worktree
+     */
+    async cleanWorktree(worktreePath: string): Promise<void> {
+        if (!this.repositoryRoot) {
+            throw new Error('No Git repository found');
+        }
+
+        try {
+            this.logger.info(`Cleaning worktree: ${worktreePath}`);
+            
+            await this.gitCli.clean(
+                worktreePath,
+                this.abortController?.signal
+            );
+            
+            this.logger.info(`Successfully cleaned worktree: ${worktreePath}`);
+        } catch (error) {
+            this.logger.error(`Failed to clean worktree: ${worktreePath}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get detailed status for a specific worktree
+     */
+    async getWorktreeDetailedStatus(worktreePath: string): Promise<{
+        clean: boolean;
+        staged: number;
+        unstaged: number;
+        untracked: number;
+    }> {
+        try {
+            const status = await this.gitCli.getStatus(
+                worktreePath,
+                this.abortController?.signal
+            );
+            
+            return {
+                clean: status.staged === 0 && status.unstaged === 0 && status.untracked === 0,
+                staged: status.staged,
+                unstaged: status.unstaged,
+                untracked: status.untracked || 0
+            };
+        } catch (error) {
+            this.logger.error(`Failed to get detailed status for worktree: ${worktreePath}`, error);
+            throw error;
+        }
+    }
+
     dispose(): void {
         // Cancel any ongoing operations
         if (this.abortController) {

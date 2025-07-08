@@ -29,12 +29,16 @@ const logger_1 = require("./utils/logger");
 const configurationService_1 = require("./services/configurationService");
 const worktreeService_1 = require("./services/worktreeService");
 const worktreeProvider_1 = require("./providers/worktreeProvider");
+const activityBarProvider_1 = require("./providers/activityBarProvider");
 const commandController_1 = require("./controllers/commandController");
+const bulkOperationsController_1 = require("./controllers/bulkOperationsController");
 const statusBarManager_1 = require("./ui/statusBarManager");
 let logger;
 let worktreeService;
 let worktreeProvider;
+let activityBarProvider;
 let commandController;
+let bulkOperationsController;
 let statusBarManager;
 function activate(context) {
     // Initialize logger
@@ -45,11 +49,17 @@ function activate(context) {
         const configService = new configurationService_1.ConfigurationService(logger);
         worktreeService = new worktreeService_1.WorktreeService(logger, configService);
         worktreeProvider = new worktreeProvider_1.WorktreeProvider(worktreeService, logger);
+        activityBarProvider = new activityBarProvider_1.ActivityBarProvider(worktreeService, configService, logger);
         commandController = new commandController_1.CommandController(worktreeService, logger, configService);
+        bulkOperationsController = new bulkOperationsController_1.BulkOperationsController(worktreeService, configService, logger);
         statusBarManager = new statusBarManager_1.StatusBarManager(worktreeService, logger);
-        // Register tree data provider
+        // Register tree data providers
         const treeView = vscode.window.createTreeView('worktreeExplorer', {
             treeDataProvider: worktreeProvider,
+            showCollapseAll: false
+        });
+        const activityBarTreeView = vscode.window.createTreeView('worktreeActivityView', {
+            treeDataProvider: activityBarProvider,
             showCollapseAll: false
         });
         // Register commands
@@ -58,10 +68,16 @@ function activate(context) {
             vscode.commands.registerCommand('worktree.create', () => commandController.createWorktree()),
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
             vscode.commands.registerCommand('worktree.openFolder', (item) => commandController.openFolder(item)),
-            vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh())
+            vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
+            // Activity Bar specific commands
+            vscode.commands.registerCommand('worktree.showActivityView', () => {
+                vscode.commands.executeCommand('workbench.view.extension.worktreeActivityBar');
+            }),
+            vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
+            vscode.commands.registerCommand('worktree.bulkOperations', () => bulkOperationsController.showBulkOperationsMenu())
         ];
         // Add all disposables to context
-        context.subscriptions.push(treeView, configService, ...commands, worktreeService, worktreeProvider, commandController, statusBarManager, logger);
+        context.subscriptions.push(treeView, activityBarTreeView, configService, ...commands, worktreeService, worktreeProvider, activityBarProvider, commandController, bulkOperationsController, statusBarManager, logger);
         // Initial refresh to populate the tree view
         worktreeService.refresh();
         logger.info('Worktree Switcher extension activated successfully');
@@ -77,7 +93,9 @@ function deactivate() {
     // Cleanup resources
     worktreeService?.dispose();
     worktreeProvider?.dispose();
+    activityBarProvider?.dispose();
     commandController?.dispose();
+    bulkOperationsController?.dispose();
     statusBarManager?.dispose();
     logger?.dispose();
 }

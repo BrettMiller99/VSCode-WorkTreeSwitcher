@@ -1,0 +1,23 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Main tree trunk -->
+  <rect x="11" y="16" width="2" height="6" fill="currentColor"/>
+  
+  <!-- Root folder -->
+  <path d="M8 20 L16 20 L16 18 L8 18 Z" fill="currentColor"/>
+  
+  <!-- Branch 1 (left) -->
+  <circle cx="6" cy="8" r="2" fill="currentColor"/>
+  <path d="M8 8 L11 8 L11 12" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  
+  <!-- Branch 2 (right) -->
+  <circle cx="18" cy="6" r="2" fill="currentColor"/>
+  <path d="M16 6 L13 6 L13 12" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  
+  <!-- Branch 3 (top) -->
+  <circle cx="12" cy="4" r="2" fill="currentColor"/>
+  <path d="M12 6 L12 12" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  
+  <!-- Connection lines -->
+  <path d="M11 12 L13 12" stroke="currentColor" stroke-width="1.5" fill="none"/>
+  <path d="M12 12 L12 16" stroke="currentColor" stroke-width="1.5" fill="none"/>
+</svg>

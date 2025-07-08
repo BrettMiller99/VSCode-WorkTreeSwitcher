@@ -48,12 +48,45 @@
         "title": "Worktree: Refresh",
         "category": "Worktree",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "worktree.showActivityView",
+        "title": "Worktree: Show Activity View",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktree.discardAllChanges",
+        "title": "Worktree: Discard All Changes",
+        "category": "Worktree",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "worktree.bulkOperations",
+        "title": "Worktree: Bulk Operations…",
+        "category": "Worktree",
+        "icon": "$(list-selection)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "worktreeActivityBar",
+          "title": "Worktrees",
+          "icon": "resources/worktree-icon.svg"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {
           "id": "worktreeExplorer",
+          "name": "Worktrees",
+          "when": "workspaceFolderCount > 0"
+        }
+      ],
+      "worktreeActivityBar": [
+        {
+          "id": "worktreeActivityView",
           "name": "Worktrees",
           "when": "workspaceFolderCount > 0"
         }
@@ -65,6 +98,21 @@
           "command": "worktree.refresh",
           "when": "view == worktreeExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "worktree.refresh",
+          "when": "view == worktreeActivityView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktree.create",
+          "when": "view == worktreeActivityView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "worktree.bulkOperations",
+          "when": "view == worktreeActivityView",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -76,6 +124,21 @@
         {
           "command": "worktree.remove",
           "when": "view == worktreeExplorer && viewItem == worktree",
+          "group": "context"
+        },
+        {
+          "command": "worktree.openFolder",
+          "when": "view == worktreeActivityView && viewItem == worktree",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktree.switch",
+          "when": "view == worktreeActivityView && viewItem == worktree",
+          "group": "inline@2"
+        },
+        {
+          "command": "worktree.remove",
+          "when": "view == worktreeActivityView && viewItem == worktree",
           "group": "context"
         }
       ]
@@ -158,6 +221,11 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically clean up stale worktree references during refresh"
+        },
+        "worktreeSwitcher.showActivityBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the worktree view in the Activity Bar"
         }
       }
     }

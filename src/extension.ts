@@ -3,13 +3,17 @@ import { Logger } from './utils/logger';
 import { ConfigurationService } from './services/configurationService';
 import { WorktreeService } from './services/worktreeService';
 import { WorktreeProvider } from './providers/worktreeProvider';
+import { ActivityBarProvider } from './providers/activityBarProvider';
 import { CommandController } from './controllers/commandController';
+import { BulkOperationsController } from './controllers/bulkOperationsController';
 import { StatusBarManager } from './ui/statusBarManager';
 
 let logger: Logger;
 let worktreeService: WorktreeService;
 let worktreeProvider: WorktreeProvider;
+let activityBarProvider: ActivityBarProvider;
 let commandController: CommandController;
+let bulkOperationsController: BulkOperationsController;
 let statusBarManager: StatusBarManager;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -22,12 +26,19 @@ export function activate(context: vscode.ExtensionContext) {
         const configService = new ConfigurationService(logger);
         worktreeService = new WorktreeService(logger, configService);
         worktreeProvider = new WorktreeProvider(worktreeService, logger);
+        activityBarProvider = new ActivityBarProvider(worktreeService, configService, logger);
         commandController = new CommandController(worktreeService, logger, configService);
+        bulkOperationsController = new BulkOperationsController(worktreeService, configService, logger);
         statusBarManager = new StatusBarManager(worktreeService, logger);
 
-        // Register tree data provider
+        // Register tree data providers
         const treeView = vscode.window.createTreeView('worktreeExplorer', {
             treeDataProvider: worktreeProvider,
+            showCollapseAll: false
+        });
+        
+        const activityBarTreeView = vscode.window.createTreeView('worktreeActivityView', {
+            treeDataProvider: activityBarProvider,
             showCollapseAll: false
         });
 
@@ -37,17 +48,26 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('worktree.create', () => commandController.createWorktree()),
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
             vscode.commands.registerCommand('worktree.openFolder', (item) => commandController.openFolder(item)),
-            vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh())
+            vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
+            // Activity Bar specific commands
+            vscode.commands.registerCommand('worktree.showActivityView', () => {
+                vscode.commands.executeCommand('workbench.view.extension.worktreeActivityBar');
+            }),
+            vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
+            vscode.commands.registerCommand('worktree.bulkOperations', () => bulkOperationsController.showBulkOperationsMenu())
         ];
 
         // Add all disposables to context
         context.subscriptions.push(
             treeView,
+            activityBarTreeView,
             configService,
             ...commands,
             worktreeService,
             worktreeProvider,
+            activityBarProvider,
             commandController,
+            bulkOperationsController,
             statusBarManager,
             logger
         );
@@ -68,7 +88,9 @@ export function deactivate() {
     // Cleanup resources
     worktreeService?.dispose();
     worktreeProvider?.dispose();
+    activityBarProvider?.dispose();
     commandController?.dispose();
+    bulkOperationsController?.dispose();
     statusBarManager?.dispose();
     logger?.dispose();
 }
