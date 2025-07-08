@@ -1,0 +1,131 @@
+{
+  "name": "vscode-worktree-switcher",
+  "displayName": "Worktree Switcher",
+  "description": "Easily switch between Git worktrees in VS Code",
+  "version": "0.1.0",
+  "publisher": "brettmiller",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "worktree",
+    "branch",
+    "switch",
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "worktree.switch",
+        "title": "Worktree: Switch…",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktree.create",
+        "title": "Worktree: Create…",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktree.remove",
+        "title": "Worktree: Remove…",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktree.openFolder",
+        "title": "Worktree: Open Folder",
+        "category": "Worktree"
+      },
+      {
+        "command": "worktree.refresh",
+        "title": "Worktree: Refresh",
+        "category": "Worktree",
+        "icon": "$(refresh)"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "worktreeExplorer",
+          "name": "Worktrees",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "worktree.refresh",
+          "when": "view == worktreeExplorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "worktree.openFolder",
+          "when": "view == worktreeExplorer && viewItem == worktree",
+          "group": "inline"
+        },
+        {
+          "command": "worktree.remove",
+          "when": "view == worktreeExplorer && viewItem == worktree",
+          "group": "context"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Worktree Switcher",
+      "properties": {
+        "worktreeSwitcher.defaultLocation": {
+          "type": "string",
+          "default": "",
+          "description": "Default directory for creating new worktrees (empty = repository parent directory)"
+        },
+        "worktreeSwitcher.autoRefresh": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "Auto-refresh interval in minutes (0 = disabled)"
+        },
+        "worktreeSwitcher.logLevel": {
+          "type": "string",
+          "enum": ["error", "warn", "info", "debug"],
+          "default": "info",
+          "description": "Logging level for the extension"
+        },
+        "worktreeSwitcher.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show current worktree information in the status bar"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "eslint": "^8.28.0",
+    "typescript": "^4.9.4",
+    "@vscode/test-electron": "^2.2.0"
+  },
+  "dependencies": {
+    "simple-git": "^3.19.1"
+  }
+}
