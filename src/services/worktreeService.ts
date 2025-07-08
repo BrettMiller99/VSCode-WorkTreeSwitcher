@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { GitCLI, GitWorktree } from '../utils/gitCli';
 import { Logger } from '../utils/logger';
+import { TelemetryService } from './telemetryService';
 
 export interface WorktreeInfo extends GitWorktree {
     name: string;
@@ -21,19 +22,21 @@ export interface WorktreeInfo extends GitWorktree {
  * Emits events when worktree state changes.
  */
 export class WorktreeService implements vscode.Disposable {
-    private gitCli: GitCLI;
-    private logger: Logger;
+    private readonly gitCli: GitCLI;
+    private readonly logger: Logger;
+    private readonly telemetryService?: TelemetryService;
+    private readonly _onDidChangeWorktrees = new vscode.EventEmitter<WorktreeInfo[]>();
     private worktrees: WorktreeInfo[] = [];
     private repositoryRoot: string | null = null;
-    private abortController: AbortController | null = null;
     private autoRefreshTimer: NodeJS.Timeout | null = null;
+    private abortController: AbortController | null = null;
     private isRefreshing: boolean = false;
 
-    private readonly _onDidChangeWorktrees = new vscode.EventEmitter<WorktreeInfo[]>();
-    public readonly onDidChangeWorktrees = this._onDidChangeWorktrees.event;
+    readonly onDidChangeWorktrees = this._onDidChangeWorktrees.event;
 
-    constructor(logger: Logger) {
+    constructor(logger: Logger, telemetryService?: TelemetryService) {
         this.logger = logger;
+        this.telemetryService = telemetryService;
         this.gitCli = new GitCLI(logger);
         
         // Set up auto-refresh based on configuration
@@ -171,6 +174,9 @@ export class WorktreeService implements vscode.Disposable {
             this._onDidChangeWorktrees.fire(this.worktrees);
             
             this.logger.debug(`Found ${this.worktrees.length} worktrees`);
+            
+            // Send telemetry for successful refresh
+            this.telemetryService?.sendWorktreeEvent('refresh', true, this.worktrees.length);
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
                 this.logger.debug('Worktree refresh was cancelled');
@@ -353,5 +359,20 @@ export class WorktreeService implements vscode.Disposable {
         
         // Dispose event emitter
         this._onDidChangeWorktrees.dispose();
+    }
+
+    /**
+     * Get Git version for telemetry and compatibility checking
+     */
+    async getGitVersion(): Promise<string> {
+        try {
+            const result = await this.gitCli.execute(['--version']);
+            // Extract version from "git version 2.39.0" format
+            const match = result.match(/git version ([\d\.]+)/);
+            return match ? match[1] : result.trim();
+        } catch (error) {
+            this.logger.debug('Failed to get Git version', error);
+            throw error;
+        }
     }
 }

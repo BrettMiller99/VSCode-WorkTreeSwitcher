@@ -1,27 +1,39 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { WorktreeService } from '../services/worktreeService';
+import { WorktreeService, WorktreeInfo } from '../services/worktreeService';
 import { WorktreeItem } from '../providers/worktreeProvider';
 import { Logger } from '../utils/logger';
+import { TelemetryService } from '../services/telemetryService';
 
 /**
  * Controller for handling VS Code commands related to worktrees.
  * Orchestrates QuickPick UI, input dialogs, and error handling.
  */
 export class CommandController implements vscode.Disposable {
-    private worktreeService: WorktreeService;
-    private logger: Logger;
+    private readonly worktreeService: WorktreeService;
+    private readonly logger: Logger;
+    private readonly telemetryService?: TelemetryService;
 
-    constructor(worktreeService: WorktreeService, logger: Logger) {
+    constructor(worktreeService: WorktreeService, logger: Logger, telemetryService?: TelemetryService) {
         this.worktreeService = worktreeService;
         this.logger = logger;
+        this.telemetryService = telemetryService;
     }
 
     /**
      * Show QuickPick to switch between worktrees
      */
     async switchWorktree(): Promise<void> {
+        return this.executeWithTelemetry('switchWorktree', async () => {
+            return this.switchWorktreeImpl();
+        });
+    }
+
+    /**
+     * Implementation of switch worktree functionality
+     */
+    private async switchWorktreeImpl(): Promise<void> {
         try {
             const worktrees = this.worktreeService.getWorktrees();
             
@@ -428,6 +440,28 @@ export class CommandController implements vscode.Disposable {
             return '🌟'; // Main/master branch
         }
         return '🌿'; // Generic branch/worktree
+    }
+
+    /**
+     * Execute a command with telemetry tracking
+     */
+    private async executeWithTelemetry<T>(
+        commandName: string,
+        operation: () => Promise<T>
+    ): Promise<T | undefined> {
+        const startTime = Date.now();
+        
+        try {
+            const result = await operation();
+            const duration = Date.now() - startTime;
+            this.telemetryService?.sendCommandEvent(commandName, true, duration);
+            return result;
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.telemetryService?.sendCommandEvent(commandName, false, duration, errorMessage);
+            throw error;
+        }
     }
 
     dispose(): void {

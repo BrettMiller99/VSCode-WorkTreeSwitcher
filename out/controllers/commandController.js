@@ -32,14 +32,23 @@ const fs = __importStar(require("fs"));
  * Orchestrates QuickPick UI, input dialogs, and error handling.
  */
 class CommandController {
-    constructor(worktreeService, logger) {
+    constructor(worktreeService, logger, telemetryService) {
         this.worktreeService = worktreeService;
         this.logger = logger;
+        this.telemetryService = telemetryService;
     }
     /**
      * Show QuickPick to switch between worktrees
      */
     async switchWorktree() {
+        return this.executeWithTelemetry('switchWorktree', async () => {
+            return this.switchWorktreeImpl();
+        });
+    }
+    /**
+     * Implementation of switch worktree functionality
+     */
+    async switchWorktreeImpl() {
         try {
             const worktrees = this.worktreeService.getWorktrees();
             if (worktrees.length === 0) {
@@ -379,6 +388,24 @@ class CommandController {
             return '🌟'; // Main/master branch
         }
         return '🌿'; // Generic branch/worktree
+    }
+    /**
+     * Execute a command with telemetry tracking
+     */
+    async executeWithTelemetry(commandName, operation) {
+        const startTime = Date.now();
+        try {
+            const result = await operation();
+            const duration = Date.now() - startTime;
+            this.telemetryService?.sendCommandEvent(commandName, true, duration);
+            return result;
+        }
+        catch (error) {
+            const duration = Date.now() - startTime;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.telemetryService?.sendCommandEvent(commandName, false, duration, errorMessage);
+            throw error;
+        }
     }
     dispose() {
         // No resources to dispose

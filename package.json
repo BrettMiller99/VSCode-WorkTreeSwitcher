@@ -104,6 +104,23 @@
           "type": "boolean",
           "default": true,
           "description": "Show current worktree information in the status bar"
+        },
+        "worktreeSwitcher.gitTimeout": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 120,
+          "description": "Git command timeout in seconds"
+        },
+        "worktreeSwitcher.defaultWorktreeLocation": {
+          "type": "string",
+          "default": "",
+          "description": "Default directory for creating new worktrees (empty = use repository parent directory)"
+        },
+        "worktreeSwitcher.enableTelemetry": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable extension telemetry (respects VS Code telemetry settings)"
         }
       }
     }

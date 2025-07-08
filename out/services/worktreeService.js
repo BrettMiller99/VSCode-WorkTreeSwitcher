@@ -34,15 +34,16 @@ const gitCli_1 = require("../utils/gitCli");
  * Emits events when worktree state changes.
  */
 class WorktreeService {
-    constructor(logger) {
+    constructor(logger, telemetryService) {
+        this._onDidChangeWorktrees = new vscode.EventEmitter();
         this.worktrees = [];
         this.repositoryRoot = null;
-        this.abortController = null;
         this.autoRefreshTimer = null;
+        this.abortController = null;
         this.isRefreshing = false;
-        this._onDidChangeWorktrees = new vscode.EventEmitter();
         this.onDidChangeWorktrees = this._onDidChangeWorktrees.event;
         this.logger = logger;
+        this.telemetryService = telemetryService;
         this.gitCli = new gitCli_1.GitCLI(logger);
         // Set up auto-refresh based on configuration
         this.setupAutoRefresh();
@@ -158,6 +159,8 @@ class WorktreeService {
             this.worktrees = worktreeInfos;
             this._onDidChangeWorktrees.fire(this.worktrees);
             this.logger.debug(`Found ${this.worktrees.length} worktrees`);
+            // Send telemetry for successful refresh
+            this.telemetryService?.sendWorktreeEvent('refresh', true, this.worktrees.length);
         }
         catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
@@ -300,6 +303,21 @@ class WorktreeService {
         }
         // Dispose event emitter
         this._onDidChangeWorktrees.dispose();
+    }
+    /**
+     * Get Git version for telemetry and compatibility checking
+     */
+    async getGitVersion() {
+        try {
+            const result = await this.gitCli.execute(['--version']);
+            // Extract version from "git version 2.39.0" format
+            const match = result.match(/git version ([\d\.]+)/);
+            return match ? match[1] : result.trim();
+        }
+        catch (error) {
+            this.logger.debug('Failed to get Git version', error);
+            throw error;
+        }
     }
 }
 exports.WorktreeService = WorktreeService;
