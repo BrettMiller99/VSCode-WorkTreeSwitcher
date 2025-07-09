@@ -15,6 +15,7 @@ node_modules/**
 # Documentation and planning
 Plans/**
 scripts/**
+convert-icon.js
 
 # Test files
 test/**

@@ -32,6 +32,7 @@
     "orphan-branch",
     "configuration"
   ],
+  "icon": "images/icon.png",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -53,7 +54,6 @@
         "title": "Worktree: Remove…",
         "category": "Worktree"
       },
-
       {
         "command": "worktree.refresh",
         "title": "Worktree: Refresh",
@@ -140,13 +140,11 @@
           "when": "view == worktreeExplorer && viewItem == worktree",
           "group": "inline@1"
         },
-
         {
           "command": "worktree.remove",
           "when": "view == worktreeExplorer && viewItem == worktree",
           "group": "context"
         },
-
         {
           "command": "worktree.switch",
           "when": "view == worktreeActivityView && viewItem == worktree",
@@ -175,7 +173,12 @@
         },
         "worktreeSwitcher.logLevel": {
           "type": "string",
-          "enum": ["error", "warn", "info", "debug"],
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
           "default": "info",
           "description": "Logging level for the extension"
         },
@@ -201,7 +204,10 @@
           "items": {
             "type": "string"
           },
-          "default": ["HEAD", "refs/stash"],
+          "default": [
+            "HEAD",
+            "refs/stash"
+          ],
           "description": "Branch patterns to exclude from worktree operations (supports glob patterns)"
         },
         "worktreeSwitcher.confirmDangerousOperations": {
@@ -211,7 +217,11 @@
         },
         "worktreeSwitcher.openInNewWindow": {
           "type": "string",
-          "enum": ["always", "never", "ask"],
+          "enum": [
+            "always",
+            "never",
+            "ask"
+          ],
           "default": "ask",
           "description": "Behavior when opening worktrees: always open in new window, never (reuse current), or ask user"
         },
@@ -224,7 +234,12 @@
         },
         "worktreeSwitcher.sortWorktreesBy": {
           "type": "string",
-          "enum": ["name", "lastModified", "creationDate", "branchName"],
+          "enum": [
+            "name",
+            "lastModified",
+            "creationDate",
+            "branchName"
+          ],
           "default": "name",
           "description": "How to sort worktrees in the tree view and quick pick"
         },
@@ -255,13 +270,14 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
     "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
     "@typescript-eslint/eslint-plugin": "^5.45.0",
     "@typescript-eslint/parser": "^5.45.0",
+    "@vscode/test-electron": "^2.2.0",
     "eslint": "^8.28.0",
-    "typescript": "^4.9.4",
-    "@vscode/test-electron": "^2.2.0"
+    "sharp": "^0.34.2",
+    "typescript": "^4.9.4"
   },
   "dependencies": {
     "simple-git": "^3.19.1"
