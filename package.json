@@ -2,7 +2,7 @@
   "name": "vscode-worktree-switcher",
   "displayName": "VSCode WorkTree Switcher",
   "description": "Comprehensive Git worktree management with Activity Bar integration, bulk operations, and advanced configuration",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "brettmiller",
   "license": "MIT",
   "repository": {
@@ -41,45 +41,40 @@
     "commands": [
       {
         "command": "worktree.switch",
-        "title": "Worktree: Switch…",
+        "title": "Switch…",
         "category": "Worktree"
       },
       {
         "command": "worktree.create",
-        "title": "Worktree: Create…",
+        "title": "Create…",
         "category": "Worktree"
       },
       {
         "command": "worktree.remove",
-        "title": "Worktree: Remove…",
+        "title": "Remove…",
         "category": "Worktree"
       },
       {
         "command": "worktree.refresh",
-        "title": "Worktree: Refresh",
+        "title": "Refresh",
         "category": "Worktree",
         "icon": "$(refresh)"
       },
       {
-        "command": "worktree.showActivityView",
-        "title": "Worktree: Show Activity View",
-        "category": "Worktree"
-      },
-      {
         "command": "worktree.discardAllChanges",
-        "title": "Worktree: Discard All Changes",
+        "title": "Discard All Changes",
         "category": "Worktree",
         "icon": "$(discard)"
       },
       {
         "command": "worktree.createForAllBranches",
-        "title": "Worktree: Create for All Branches",
+        "title": "Create for All Branches",
         "category": "Worktree",
         "icon": "$(repo-forked)"
       },
       {
         "command": "worktree.bulkOperations",
-        "title": "Worktree: Bulk Operations…",
+        "title": "Bulk Operations…",
         "category": "Worktree",
         "icon": "$(list-selection)"
       }
@@ -116,7 +111,17 @@
         {
           "command": "worktree.refresh",
           "when": "view == worktreeExplorer",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktree.create",
+          "when": "view == worktreeExplorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "worktree.bulkOperations",
+          "when": "view == worktreeExplorer",
+          "group": "navigation@3"
         },
         {
           "command": "worktree.refresh",

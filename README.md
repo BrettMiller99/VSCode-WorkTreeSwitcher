@@ -2,6 +2,20 @@
 
 A comprehensive Visual Studio Code extension for managing Git worktrees with an intuitive, feature-rich interface that provides seamless worktree management across multiple views and interaction methods.
 
+## 🆕 What's New in v1.1.0
+
+### 🎨 Perfect UI Consistency
+- **Unified Visual Experience**: Explorer and Activity Bar views now have identical styling
+- **Enhanced Labels**: `🚀 worktree-name 🟢` format with type and status icons
+- **Rich Markdown Tooltips**: Professional formatting with interactive hints
+- **Complete Functional Parity**: Same navigation buttons and capabilities in both views
+
+### 🔧 Polished User Experience
+- **Clean Error Handling**: Eliminated confusing duplicate notifications
+- **Professional Command Palette**: Fixed duplicate prefixes for clean appearance
+- **Single Warning Messages**: Clear, user-friendly notifications
+- **Enhanced Accessibility**: Full feature set available in all views
+
 ## ✨ Features
 
 ### 🎯 **Core Functionality**
@@ -37,6 +51,8 @@ A comprehensive Visual Studio Code extension for managing Git worktrees with an 
   - 🔒 Locked worktrees
 - **💫 Enhanced QuickPick**: Rich dialogs with dual-icon system and contextual information
 - **📱 Multiple Views**: Consistent experience across Explorer, Activity Bar, and Command Palette
+- **✨ Perfect UI Consistency**: Explorer and Activity Bar views now have identical styling and functionality
+- **🎯 Rich Tooltips**: Professional markdown tooltips with interactive hints and code formatting
 
 ### ⚙️ **Advanced Configuration**
 - **🔧 Git Operations**: Configurable timeouts, branch filtering, and naming patterns

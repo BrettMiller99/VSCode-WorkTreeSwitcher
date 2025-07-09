@@ -23,10 +23,17 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GitCLI = void 0;
+exports.GitCLI = exports.BranchType = void 0;
 const child_process_1 = require("child_process");
 const util_1 = require("util");
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+var BranchType;
+(function (BranchType) {
+    BranchType["Local"] = "local";
+    BranchType["Remote"] = "remote";
+    BranchType["Both"] = "both";
+})(BranchType = exports.BranchType || (exports.BranchType = {}));
 const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
 /**
  * Thin wrapper around Git CLI operations using child_process.execFile.
@@ -38,15 +45,46 @@ class GitCLI {
         this.defaultTimeout = defaultTimeout || GitCLI.DEFAULT_TIMEOUT;
     }
     /**
+     * Find Git executable with fallback locations
+     */
+    async findGitExecutable() {
+        // Try common Git locations
+        const commonPaths = [
+            'git',
+            '/usr/bin/git',
+            '/usr/local/bin/git',
+            '/opt/homebrew/bin/git',
+            '/opt/local/bin/git' // MacPorts
+        ];
+        for (const gitPath of commonPaths) {
+            try {
+                await execFileAsync(gitPath, ['--version'], { timeout: 5000 });
+                return gitPath;
+            }
+            catch {
+                continue;
+            }
+        }
+        throw new Error('Git executable not found. Please ensure Git is installed and available in PATH.');
+    }
+    /**
      * Execute a Git command with the given arguments
      */
     async executeGit(args, options = {}) {
-        const { cwd, timeout = this.defaultTimeout, signal } = options;
+        const { cwd, timeout = this.defaultTimeout, signal, suppressExpectedErrors = false } = options;
         // Mask sensitive paths in logs
         const maskedArgs = args.map(arg => arg.includes('/') ? path.basename(arg) : arg);
         this.logger.debug(`Executing git command: git ${maskedArgs.join(' ')}`, { cwd });
         try {
-            const { stdout, stderr } = await execFileAsync('git', args, {
+            // Try to find Git executable if not already cached
+            let gitExecutable = 'git';
+            try {
+                gitExecutable = await this.findGitExecutable();
+            }
+            catch (error) {
+                this.logger.warn('Could not find Git executable, using default "git"');
+            }
+            const { stdout, stderr } = await execFileAsync(gitExecutable, args, {
                 cwd,
                 timeout,
                 signal,
@@ -63,10 +101,17 @@ class GitCLI {
                 this.logger.debug(`Git command aborted: git ${maskedArgs.join(' ')}`);
                 throw error; // Re-throw abort errors as-is
             }
-            this.logger.error(`Git command failed: git ${maskedArgs.join(' ')}`, error);
+            // Check if this is an expected error that might be retried
+            const isExpectedError = error.stderr && (error.stderr.includes('missing but already registered') ||
+                error.stderr.includes('already used by worktree') ||
+                error.stderr.includes('is a main working tree'));
+            // Only log as error if it's not an expected error or if we're not suppressing
+            if (!suppressExpectedErrors || !isExpectedError) {
+                this.logger.error(`Git command failed: git ${maskedArgs.join(' ')}`, error);
+            }
             // Enhance error message with more context
             if (error.code === 'ENOENT') {
-                throw new Error('Git is not installed or not found in PATH');
+                throw new Error('Git is not installed or not found in PATH. Please install Git or add it to your system PATH.');
             }
             else if (error.code === 'ETIMEDOUT') {
                 throw new Error(`Git command timed out after ${timeout}ms`);
@@ -108,7 +153,7 @@ class GitCLI {
     /**
      * Create a new worktree
      */
-    async createWorktree(repoPath, worktreePath, branch, options = {}, signal) {
+    async createWorktree(repoPath, worktreePath, branch, options = {}, signal, suppressExpectedErrors = false) {
         if (options.orphan) {
             // For orphan branches, we need a different approach since git worktree add doesn't support --orphan
             // 1. Create worktree with a temporary branch
@@ -117,13 +162,13 @@ class GitCLI {
             if (options.force) {
                 tempArgs.splice(2, 0, '--force');
             }
-            await this.executeGit(tempArgs, { cwd: repoPath, signal });
+            await this.executeGit(tempArgs, { cwd: repoPath, signal, suppressExpectedErrors });
             // 2. Create orphan branch in the new worktree
-            await this.executeGit(['checkout', '--orphan', branch], { cwd: worktreePath, signal });
+            await this.executeGit(['checkout', '--orphan', branch], { cwd: worktreePath, signal, suppressExpectedErrors });
             // 3. Remove all files to make it truly empty
-            await this.executeGit(['rm', '-rf', '.'], { cwd: worktreePath, signal });
+            await this.executeGit(['rm', '-rf', '.'], { cwd: worktreePath, signal, suppressExpectedErrors });
             // 4. Clean up any remaining files
-            await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+            await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal, suppressExpectedErrors });
             return;
         }
         const args = ['worktree', 'add'];
@@ -137,7 +182,7 @@ class GitCLI {
         if (!options.newBranch) {
             args.push(branch);
         }
-        await this.executeGit(args, { cwd: repoPath, signal });
+        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
     /**
      * Remove a worktree
@@ -148,7 +193,9 @@ class GitCLI {
             args.push('--force');
         }
         args.push(worktreePath);
-        await this.executeGit(args, { cwd: repoPath, signal });
+        // Suppress expected errors for main working tree removal attempts
+        const suppressExpectedErrors = true;
+        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
     /**
      * Get the status of a worktree (clean/dirty)
@@ -207,20 +254,73 @@ class GitCLI {
             .filter(branch => !branch.startsWith('origin/HEAD'));
     }
     /**
-     * Get branches that don't have existing worktrees
+     * Get branches that don't have existing worktrees with branch type filtering and deduplication
      */
-    async getBranchesWithoutWorktrees(cwd, signal) {
-        const [allBranches, existingWorktrees] = await Promise.all([
-            this.listBranches(cwd, signal),
-            this.listWorktrees(cwd, signal)
-        ]);
-        // Get branches that are already used by worktrees
-        const usedBranches = new Set(existingWorktrees
+    async getBranchesWithoutWorktrees(cwd, branchType = BranchType.Both, signal) {
+        // First, prune stale worktree entries to clean up the registry
+        await this.pruneWorktrees(cwd, signal);
+        // Get all branches
+        const allBranches = await this.listBranches(cwd, signal);
+        // Get existing worktrees (after pruning)
+        const worktrees = await this.listWorktrees(cwd, signal);
+        // Filter out worktrees that don't actually exist on disk
+        const validWorktrees = worktrees.filter(wt => {
+            try {
+                return fs.existsSync(wt.path);
+            }
+            catch {
+                return false;
+            }
+        });
+        const usedBranches = new Set(validWorktrees
             .map(wt => wt.branch)
             .filter(branch => branch) // Filter out undefined branches
         );
-        // Filter out branches that already have worktrees
-        return allBranches.filter(branch => {
+        // Separate local and remote branches
+        const localBranches = [];
+        const remoteBranches = [];
+        allBranches.forEach(branch => {
+            if (branch.startsWith('origin/')) {
+                remoteBranches.push(branch);
+            }
+            else {
+                localBranches.push(branch);
+            }
+        });
+        // Create a map to deduplicate branches (prefer local over remote)
+        const branchMap = new Map();
+        // Add local branches first (they take priority)
+        localBranches.forEach(branch => {
+            branchMap.set(branch, { branch, isLocal: true });
+        });
+        // Add remote branches only if no local equivalent exists
+        remoteBranches.forEach(branch => {
+            const cleanName = branch.substring(7); // Remove 'origin/' prefix
+            if (!branchMap.has(cleanName)) {
+                branchMap.set(cleanName, { branch, isLocal: false });
+            }
+        });
+        // Filter based on branch type preference
+        let filteredBranches = [];
+        branchMap.forEach(({ branch, isLocal }) => {
+            switch (branchType) {
+                case BranchType.Local:
+                    if (isLocal) {
+                        filteredBranches.push(branch);
+                    }
+                    break;
+                case BranchType.Remote:
+                    if (!isLocal) {
+                        filteredBranches.push(branch);
+                    }
+                    break;
+                case BranchType.Both:
+                    filteredBranches.push(branch);
+                    break;
+            }
+        });
+        // Filter out branches that already have valid worktrees
+        return filteredBranches.filter(branch => {
             // Remove origin/ prefix for comparison
             const cleanBranch = branch.startsWith('origin/') ? branch.substring(7) : branch;
             return !usedBranches.has(cleanBranch) && !usedBranches.has(branch);
@@ -237,6 +337,19 @@ class GitCLI {
      */
     async clean(worktreePath, signal) {
         await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+    }
+    /**
+     * Prune stale worktree entries (git worktree prune)
+     */
+    async pruneWorktrees(cwd, signal) {
+        try {
+            await this.executeGit(['worktree', 'prune'], { cwd, signal });
+            this.logger.debug('Pruned stale worktree entries');
+        }
+        catch (error) {
+            this.logger.warn('Failed to prune stale worktree entries', error);
+            // Don't throw - this is a cleanup operation that can fail safely
+        }
     }
     /**
      * Get detailed status including untracked files

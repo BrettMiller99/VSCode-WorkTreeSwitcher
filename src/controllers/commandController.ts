@@ -336,6 +336,13 @@ export class CommandController implements vscode.Disposable {
             vscode.window.showInformationMessage(`Worktree "${worktreeToRemove.name}" removed successfully`);
 
         } catch (error) {
+            // Check if this is an attempt to remove the main working tree
+            if (error instanceof Error && error.message.includes('Cannot remove the main Git repository folder')) {
+                // Don't show additional UI notification - the WorktreeService already handles this
+                this.logger.debug('Main working tree removal attempt handled by WorktreeService');
+                return;
+            }
+            
             this.logger.error('Failed to remove worktree', error);
             vscode.window.showErrorMessage(`Failed to remove worktree: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }

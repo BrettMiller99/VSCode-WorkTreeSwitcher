@@ -69,9 +69,6 @@ function activate(context) {
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
             vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
             // Activity Bar specific commands
-            vscode.commands.registerCommand('worktree.showActivityView', () => {
-                vscode.commands.executeCommand('workbench.view.extension.worktreeActivityBar');
-            }),
             vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
             vscode.commands.registerCommand('worktree.createForAllBranches', () => bulkOperationsController.createWorktreesForAllBranches()),
             vscode.commands.registerCommand('worktree.bulkOperations', () => bulkOperationsController.showBulkOperationsMenu())

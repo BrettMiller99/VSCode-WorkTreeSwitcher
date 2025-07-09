@@ -25,6 +25,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BulkOperationsController = void 0;
 const vscode = __importStar(require("vscode"));
+const gitCli_1 = require("../utils/gitCli");
 /**
  * Controller for handling bulk operations across multiple worktrees.
  * Provides functionality for discarding changes, bulk status checks, and other multi-worktree operations.
@@ -268,10 +269,35 @@ class BulkOperationsController {
      */
     async createWorktreesForAllBranches() {
         try {
-            // First, get a preview of branches that would get worktrees
-            const branchesWithoutWorktrees = await this.worktreeService.getBranchesWithoutWorktrees();
+            // First, let user select branch type
+            const branchTypeOptions = [
+                {
+                    label: '🌿 Local Branches Only',
+                    description: 'Create worktrees for local branches only',
+                    branchType: gitCli_1.BranchType.Local
+                },
+                {
+                    label: '🌐 Remote Branches Only',
+                    description: 'Create worktrees for remote branches only',
+                    branchType: gitCli_1.BranchType.Remote
+                },
+                {
+                    label: '🌳 Both Local and Remote',
+                    description: 'Create worktrees for both local and remote branches (deduplicated)',
+                    branchType: gitCli_1.BranchType.Both
+                }
+            ];
+            const selectedBranchType = await vscode.window.showQuickPick(branchTypeOptions, {
+                placeHolder: 'Select which types of branches to create worktrees for',
+                title: 'Branch Type Selection'
+            });
+            if (!selectedBranchType) {
+                return;
+            }
+            // Get a preview of branches that would get worktrees
+            const branchesWithoutWorktrees = await this.worktreeService.getBranchesWithoutWorktrees(selectedBranchType.branchType);
             if (branchesWithoutWorktrees.length === 0) {
-                vscode.window.showInformationMessage('🟢 All branches already have worktrees');
+                vscode.window.showInformationMessage(`🟢 All ${selectedBranchType.label.toLowerCase()} already have worktrees`);
                 return;
             }
             // Show confirmation dialog with preview
@@ -294,7 +320,7 @@ class BulkOperationsController {
                     abortController.abort();
                 });
                 try {
-                    const result = await this.worktreeService.createWorktreesForAllBranches((current, total, branchName) => {
+                    const result = await this.worktreeService.createWorktreesForAllBranches(selectedBranchType.branchType, (current, total, branchName) => {
                         progress.report({
                             message: `Creating worktree ${current}/${total}: ${branchName}`,
                             increment: (100 / total)

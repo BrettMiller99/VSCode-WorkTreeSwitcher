@@ -8,7 +8,8 @@ export class WorktreeItem extends vscode.TreeItem {
         public readonly worktree: WorktreeInfo,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState
     ) {
-        super(worktree.name, collapsibleState);
+        // Enhanced label with icons like Activity Bar
+        super(`${WorktreeItem.getWorktreeTypeIcon(worktree)} ${worktree.name} ${WorktreeItem.getStatusIcon(worktree)}`, collapsibleState);
         
         this.tooltip = this.buildTooltip();
         this.description = this.buildDescription();
@@ -24,45 +25,44 @@ export class WorktreeItem extends vscode.TreeItem {
         };
     }
 
-    private buildTooltip(): string {
-        const lines = [
-            `Path: ${this.worktree.path}`,
-            `Branch: ${this.worktree.currentBranch || this.worktree.branch || 'Unknown'}`,
-            `HEAD: ${this.worktree.head.substring(0, 8)}`,
-            `Status: ${this.getStatusText()}`
-        ];
-
+    private buildTooltip(): vscode.MarkdownString {
+        const typeIcon = WorktreeItem.getWorktreeTypeIcon(this.worktree);
+        const statusIcon = WorktreeItem.getStatusIcon(this.worktree);
+        const branchName = this.worktree.currentBranch || this.worktree.branch || 'Unknown branch';
+        const statusText = this.getStatusText();
+        
+        // Enhanced markdown tooltip like Activity Bar
+        const tooltip = new vscode.MarkdownString();
+        tooltip.appendMarkdown(`**${typeIcon} ${this.worktree.name}** ${statusIcon}\n\n`);
+        tooltip.appendMarkdown(`📂 **Path:** \`${this.worktree.path}\`\n\n`);
+        if (this.worktree.branch) {
+            tooltip.appendMarkdown(`🌱 **Branch:** \`${branchName}\`\n\n`);
+        }
+        tooltip.appendMarkdown(`🔗 **HEAD:** \`${this.worktree.head.substring(0, 8)}\`\n\n`);
+        tooltip.appendMarkdown(`📊 **Status:** ${statusText}\n\n`);
+        
         if (this.worktree.isActive) {
-            lines.push('Currently active workspace');
+            tooltip.appendMarkdown(`✅ **Current Workspace**`);
+        } else {
+            tooltip.appendMarkdown(`💡 *Click to switch to this worktree*`);
         }
-
+        
         if (this.worktree.locked) {
-            lines.push('⚠️ Locked');
+            tooltip.appendMarkdown(`\n\n🔒 **Locked**`);
         }
-
+        
         if (this.worktree.prunable) {
-            lines.push('⚠️ Prunable');
+            tooltip.appendMarkdown(`\n\n⚠️ **Prunable**`);
         }
-
-        return lines.join('\n');
+        
+        return tooltip;
     }
 
     private buildDescription(): string {
-        const parts: string[] = [];
-        
-        // Add branch name
-        const branchName = this.worktree.currentBranch || this.worktree.branch;
-        if (branchName) {
-            parts.push(branchName);
-        }
-        
-        // Add status indicator
-        const statusText = this.getStatusText();
-        if (statusText !== 'Clean') {
-            parts.push(statusText);
-        }
-
-        return parts.join(' • ');
+        // Enhanced description with path and status like Activity Bar
+        const branchName = this.worktree.currentBranch || this.worktree.branch || 'No branch';
+        const pathName = this.worktree.path.split('/').pop() || 'Unknown';
+        return `${branchName} • ${pathName}`;
     }
 
     private getStatusText(): string {
@@ -79,6 +79,38 @@ export class WorktreeItem extends vscode.TreeItem {
         }
 
         return parts.join(', ') || 'Modified';
+    }
+
+    private static getWorktreeTypeIcon(worktree: WorktreeInfo): string {
+        if (worktree.isActive) {
+            return '🏠'; // Current/active worktree
+        }
+        if (worktree.branch && worktree.branch.includes('feature')) {
+            return '🚀'; // Feature branch
+        }
+        if (worktree.branch && (worktree.branch.includes('hotfix') || worktree.branch.includes('fix'))) {
+            return '🔧'; // Hotfix/bugfix branch
+        }
+        if (worktree.branch && worktree.branch.includes('main') || worktree.branch === 'master') {
+            return '🌟'; // Main/master branch
+        }
+        return '🌿'; // Generic branch/worktree
+    }
+
+    private static getStatusIcon(worktree: WorktreeInfo): string {
+        if (worktree.locked) {
+            return '🔒';
+        }
+        
+        if (!worktree.status.clean) {
+            if (worktree.status.staged > 0) {
+                return '🟡'; // Has staged changes (yellow circle)
+            } else {
+                return '🔴'; // Has unstaged changes (red circle)
+            }
+        }
+        
+        return '🟢'; // Clean (green circle)
     }
 
     private getIcon(): vscode.ThemeIcon {

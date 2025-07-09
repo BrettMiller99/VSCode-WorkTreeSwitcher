@@ -226,19 +226,25 @@ class WorktreeService {
     /**
      * Create a new worktree
      */
-    async createWorktree(branch, worktreePath, options = {}) {
+    async createWorktree(branch, worktreePath, options = {}, suppressExpectedErrors = false) {
         if (!this.repositoryRoot) {
             throw new Error('No Git repository found');
         }
         try {
             this.logger.info(`Creating worktree: ${worktreePath} for branch: ${branch}`);
-            await this.gitCli.createWorktree(this.repositoryRoot, worktreePath, branch, options, this.abortController?.signal);
+            await this.gitCli.createWorktree(this.repositoryRoot, worktreePath, branch, options, this.abortController?.signal, suppressExpectedErrors);
             // Refresh the worktree list
             await this.refresh();
             this.logger.info(`Successfully created worktree: ${worktreePath}`);
         }
         catch (error) {
-            this.logger.error(`Failed to create worktree: ${worktreePath}`, error);
+            // Check if this is an expected error that might be retried
+            const isExpectedError = error.message && (error.message.includes('missing but already registered') ||
+                error.message.includes('already used by worktree'));
+            // Only log as error if it's not an expected error or if we're not suppressing
+            if (!suppressExpectedErrors || !isExpectedError) {
+                this.logger.error(`Failed to create worktree: ${worktreePath}`, error);
+            }
             throw error;
         }
     }
@@ -257,6 +263,12 @@ class WorktreeService {
             this.logger.info(`Successfully removed worktree: ${worktreePath}`);
         }
         catch (error) {
+            // Check if this is an attempt to remove the main working tree
+            if (error.message && error.message.includes('is a main working tree')) {
+                const friendlyError = new Error('Cannot remove the main Git repository folder. Only worktrees created from branches can be removed.');
+                this.logger.warn('Cannot remove the main working tree');
+                throw friendlyError;
+            }
             this.logger.error(`Failed to remove worktree: ${worktreePath}`, error);
             throw error;
         }
@@ -384,12 +396,12 @@ class WorktreeService {
     /**
      * Get branches that don't have existing worktrees
      */
-    async getBranchesWithoutWorktrees() {
+    async getBranchesWithoutWorktrees(branchType = gitCli_1.BranchType.Both) {
         if (!this.repositoryRoot) {
             throw new Error('No Git repository found');
         }
         try {
-            return await this.gitCli.getBranchesWithoutWorktrees(this.repositoryRoot, this.abortController?.signal);
+            return await this.gitCli.getBranchesWithoutWorktrees(this.repositoryRoot, branchType, this.abortController?.signal);
         }
         catch (error) {
             this.logger.error('Failed to get branches without worktrees', error);
@@ -399,7 +411,7 @@ class WorktreeService {
     /**
      * Create worktrees for all branches that don't have existing worktrees
      */
-    async createWorktreesForAllBranches(progressCallback, signal) {
+    async createWorktreesForAllBranches(branchType = gitCli_1.BranchType.Both, progressCallback, signal) {
         if (!this.repositoryRoot) {
             throw new Error('No Git repository found');
         }
@@ -410,7 +422,7 @@ class WorktreeService {
         };
         try {
             // Get branches without worktrees
-            const branches = await this.getBranchesWithoutWorktrees();
+            const branches = await this.getBranchesWithoutWorktrees(branchType);
             if (branches.length === 0) {
                 this.logger.info('No branches found that need worktrees');
                 return result;
@@ -436,14 +448,40 @@ class WorktreeService {
                         result.skipped.push(cleanBranchName);
                         continue;
                     }
-                    // Create the worktree
-                    await this.createWorktree(cleanBranchName, worktreePath, { newBranch: branch.startsWith('origin/') } // Create local branch for remote branches
-                    );
+                    // Create the worktree with retry logic for stale registrations
+                    let createOptions = {
+                        newBranch: branch.startsWith('origin/')
+                    };
+                    try {
+                        // First attempt - suppress expected errors since we'll retry
+                        await this.createWorktree(cleanBranchName, worktreePath, createOptions, true);
+                    }
+                    catch (createError) {
+                        // Check if this is a stale worktree registration error
+                        if (createError.message && (createError.message.includes('missing but already registered') ||
+                            createError.message.includes('already used by worktree'))) {
+                            this.logger.info(`Retrying worktree creation for ${cleanBranchName} with force option`);
+                            // Retry with force option to override stale registration
+                            createOptions.force = true;
+                            await this.createWorktree(cleanBranchName, worktreePath, createOptions, false);
+                        }
+                        else {
+                            // Re-throw other errors
+                            throw createError;
+                        }
+                    }
                     result.created.push(cleanBranchName);
                     this.logger.info(`Created worktree for branch: ${cleanBranchName}`);
                 }
                 catch (error) {
-                    const errorMessage = error.message || 'Unknown error';
+                    let errorMessage = error.message || 'Unknown error';
+                    // Provide more helpful error messages for common issues
+                    if (errorMessage.includes('Git is not installed') || errorMessage.includes('not found in PATH')) {
+                        errorMessage = 'Git is not installed or not found in PATH. Please install Git and ensure it is available in your system PATH.';
+                    }
+                    else if (errorMessage.includes('spawn git ENOENT')) {
+                        errorMessage = 'Git executable not found. Please ensure Git is installed and available in your system PATH.';
+                    }
                     this.logger.error(`Failed to create worktree for branch: ${cleanBranchName}`, error);
                     result.errors.push({ branch: cleanBranchName, error: errorMessage });
                 }
