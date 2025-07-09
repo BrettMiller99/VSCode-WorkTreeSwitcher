@@ -381,6 +381,83 @@ class WorktreeService {
             throw error;
         }
     }
+    /**
+     * Get branches that don't have existing worktrees
+     */
+    async getBranchesWithoutWorktrees() {
+        if (!this.repositoryRoot) {
+            throw new Error('No Git repository found');
+        }
+        try {
+            return await this.gitCli.getBranchesWithoutWorktrees(this.repositoryRoot, this.abortController?.signal);
+        }
+        catch (error) {
+            this.logger.error('Failed to get branches without worktrees', error);
+            throw error;
+        }
+    }
+    /**
+     * Create worktrees for all branches that don't have existing worktrees
+     */
+    async createWorktreesForAllBranches(progressCallback, signal) {
+        if (!this.repositoryRoot) {
+            throw new Error('No Git repository found');
+        }
+        const result = {
+            created: [],
+            skipped: [],
+            errors: []
+        };
+        try {
+            // Get branches without worktrees
+            const branches = await this.getBranchesWithoutWorktrees();
+            if (branches.length === 0) {
+                this.logger.info('No branches found that need worktrees');
+                return result;
+            }
+            this.logger.info(`Creating worktrees for ${branches.length} branches`);
+            const defaultLocation = this.getDefaultWorktreeLocation();
+            for (let i = 0; i < branches.length; i++) {
+                if (signal?.aborted) {
+                    this.logger.info('Bulk worktree creation cancelled');
+                    break;
+                }
+                const branch = branches[i];
+                const cleanBranchName = branch.startsWith('origin/') ? branch.substring(7) : branch;
+                // Report progress
+                progressCallback?.(i + 1, branches.length, cleanBranchName);
+                try {
+                    // Generate worktree name using configuration pattern
+                    const worktreeName = this.configService.generateWorktreeName(cleanBranchName);
+                    const worktreePath = path.join(defaultLocation, worktreeName);
+                    // Check if worktree path already exists
+                    if (fs.existsSync(worktreePath)) {
+                        this.logger.warn(`Worktree path already exists, skipping: ${worktreePath}`);
+                        result.skipped.push(cleanBranchName);
+                        continue;
+                    }
+                    // Create the worktree
+                    await this.createWorktree(cleanBranchName, worktreePath, { newBranch: branch.startsWith('origin/') } // Create local branch for remote branches
+                    );
+                    result.created.push(cleanBranchName);
+                    this.logger.info(`Created worktree for branch: ${cleanBranchName}`);
+                }
+                catch (error) {
+                    const errorMessage = error.message || 'Unknown error';
+                    this.logger.error(`Failed to create worktree for branch: ${cleanBranchName}`, error);
+                    result.errors.push({ branch: cleanBranchName, error: errorMessage });
+                }
+            }
+            // Refresh worktree list after bulk creation
+            await this.refresh();
+            this.logger.info(`Bulk worktree creation completed. Created: ${result.created.length}, Skipped: ${result.skipped.length}, Errors: ${result.errors.length}`);
+        }
+        catch (error) {
+            this.logger.error('Failed to create worktrees for all branches', error);
+            throw error;
+        }
+        return result;
+    }
     dispose() {
         // Cancel any ongoing operations
         if (this.abortController) {

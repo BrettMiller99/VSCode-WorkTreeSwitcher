@@ -28,6 +28,11 @@ export class BulkOperationsController implements vscode.Disposable {
     async showBulkOperationsMenu(): Promise<void> {
         const operations = [
             {
+                label: '🌳 Create Worktrees for All Branches',
+                description: 'Create worktrees for every branch that doesn\'t have one',
+                action: 'createForAllBranches'
+            },
+            {
                 label: '🗑️ Discard All Changes',
                 description: 'Discard uncommitted changes across all worktrees',
                 action: 'discardAllChanges'
@@ -59,6 +64,9 @@ export class BulkOperationsController implements vscode.Disposable {
         }
 
         switch (selected.action) {
+            case 'createForAllBranches':
+                await this.createWorktreesForAllBranches();
+                break;
             case 'discardAllChanges':
                 await this.discardAllChanges();
                 break;
@@ -279,6 +287,103 @@ export class BulkOperationsController implements vscode.Disposable {
         } catch (error) {
             this.logger.error('Failed to refresh all worktrees', error);
             vscode.window.showErrorMessage('Failed to refresh worktrees. Check the output panel for details.');
+        }
+    }
+
+    /**
+     * Create worktrees for all branches that don't have existing worktrees
+     */
+    async createWorktreesForAllBranches(): Promise<void> {
+        try {
+            // First, get a preview of branches that would get worktrees
+            const branchesWithoutWorktrees = await this.worktreeService.getBranchesWithoutWorktrees();
+            
+            if (branchesWithoutWorktrees.length === 0) {
+                vscode.window.showInformationMessage('🟢 All branches already have worktrees');
+                return;
+            }
+
+            // Show confirmation dialog with preview
+            const previewMessage = branchesWithoutWorktrees.length <= 10 
+                ? `Branches: ${branchesWithoutWorktrees.join(', ')}`
+                : `${branchesWithoutWorktrees.slice(0, 10).join(', ')} and ${branchesWithoutWorktrees.length - 10} more...`;
+            
+            const confirmation = await vscode.window.showInformationMessage(
+                `🌳 Create worktrees for ${branchesWithoutWorktrees.length} branch(es)?\n\n${previewMessage}`,
+                { modal: true },
+                'Create Worktrees',
+                'Cancel'
+            );
+
+            if (confirmation !== 'Create Worktrees') {
+                return;
+            }
+
+            // Show progress and create worktrees
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Creating worktrees for all branches...',
+                cancellable: true
+            }, async (progress, token) => {
+                // Convert CancellationToken to AbortSignal
+                const abortController = new AbortController();
+                const disposable = token.onCancellationRequested(() => {
+                    abortController.abort();
+                });
+
+                try {
+                    const result = await this.worktreeService.createWorktreesForAllBranches(
+                        (current, total, branchName) => {
+                            progress.report({
+                                message: `Creating worktree ${current}/${total}: ${branchName}`,
+                                increment: (100 / total)
+                            });
+                        },
+                        abortController.signal
+                    );
+
+                if (!token.isCancellationRequested) {
+                    // Show results summary
+                    const messages = [];
+                    if (result.created.length > 0) {
+                        messages.push(`✅ Created ${result.created.length} worktree(s)`);
+                    }
+                    if (result.skipped.length > 0) {
+                        messages.push(`⏭️ Skipped ${result.skipped.length} (already exist)`);
+                    }
+                    if (result.errors.length > 0) {
+                        messages.push(`❌ Failed ${result.errors.length}`);
+                    }
+
+                    const summaryMessage = messages.join(', ');
+                    
+                    if (result.errors.length > 0) {
+                        // Show warning with error details
+                        const errorDetails = result.errors.slice(0, 3)
+                            .map(e => `${e.branch}: ${e.error}`)
+                            .join('\n');
+                        const moreErrors = result.errors.length > 3 ? `\n...and ${result.errors.length - 3} more errors` : '';
+                        
+                        vscode.window.showWarningMessage(
+                            `${summaryMessage}\n\nErrors:\n${errorDetails}${moreErrors}`,
+                            'View Logs'
+                        ).then(selection => {
+                            if (selection === 'View Logs') {
+                                vscode.commands.executeCommand('workbench.action.toggleDevTools');
+                            }
+                        });
+                    } else {
+                        vscode.window.showInformationMessage(summaryMessage);
+                    }
+                }
+                } finally {
+                    disposable.dispose();
+                }
+            });
+
+        } catch (error) {
+            this.logger.error('Failed to create worktrees for all branches', error);
+            vscode.window.showErrorMessage('Failed to create worktrees. Check the output panel for details.');
         }
     }
 

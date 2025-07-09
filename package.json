@@ -72,6 +72,12 @@
         "icon": "$(discard)"
       },
       {
+        "command": "worktree.createForAllBranches",
+        "title": "Worktree: Create for All Branches",
+        "category": "Worktree",
+        "icon": "$(repo-forked)"
+      },
+      {
         "command": "worktree.bulkOperations",
         "title": "Worktree: Bulk Operations…",
         "category": "Worktree",

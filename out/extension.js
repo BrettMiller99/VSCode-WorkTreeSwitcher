@@ -73,6 +73,7 @@ function activate(context) {
                 vscode.commands.executeCommand('workbench.view.extension.worktreeActivityBar');
             }),
             vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
+            vscode.commands.registerCommand('worktree.createForAllBranches', () => bulkOperationsController.createWorktreesForAllBranches()),
             vscode.commands.registerCommand('worktree.bulkOperations', () => bulkOperationsController.showBulkOperationsMenu())
         ];
         // Add all disposables to context

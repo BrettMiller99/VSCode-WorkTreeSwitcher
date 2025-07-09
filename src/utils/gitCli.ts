@@ -240,6 +240,30 @@ export class GitCLI {
     }
 
     /**
+     * Get branches that don't have existing worktrees
+     */
+    async getBranchesWithoutWorktrees(cwd: string, signal?: AbortSignal): Promise<string[]> {
+        const [allBranches, existingWorktrees] = await Promise.all([
+            this.listBranches(cwd, signal),
+            this.listWorktrees(cwd, signal)
+        ]);
+
+        // Get branches that are already used by worktrees
+        const usedBranches = new Set(
+            existingWorktrees
+                .map(wt => wt.branch)
+                .filter(branch => branch) // Filter out undefined branches
+        );
+
+        // Filter out branches that already have worktrees
+        return allBranches.filter(branch => {
+            // Remove origin/ prefix for comparison
+            const cleanBranch = branch.startsWith('origin/') ? branch.substring(7) : branch;
+            return !usedBranches.has(cleanBranch) && !usedBranches.has(branch);
+        });
+    }
+
+    /**
      * Reset all changes in a worktree (git reset --hard)
      */
     async resetHard(worktreePath: string, signal?: AbortSignal): Promise<void> {
