@@ -49,6 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
 
             vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
+            vscode.commands.registerCommand('worktree.scanRemoteChanges', () => commandController.scanRemoteChanges()),
             // Activity Bar specific commands
             vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
             vscode.commands.registerCommand('worktree.createForAllBranches', () => bulkOperationsController.createWorktreesForAllBranches()),
@@ -69,6 +70,8 @@ export function activate(context: vscode.ExtensionContext) {
             statusBarManager,
             logger
         );
+
+        // Git validation removed - extension will handle Git errors gracefully during actual operations
 
         // Initial refresh to populate the tree view
         worktreeService.refresh();

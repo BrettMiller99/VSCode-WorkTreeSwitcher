@@ -41,13 +41,18 @@ const execFileAsync = (0, util_1.promisify)(child_process_1.execFile);
  */
 class GitCLI {
     constructor(logger, defaultTimeout) {
+        this.gitExecutable = null;
         this.logger = logger;
         this.defaultTimeout = defaultTimeout || GitCLI.DEFAULT_TIMEOUT;
     }
     /**
-     * Find Git executable with fallback locations
+     * Find Git executable with fallback locations and caching
      */
     async findGitExecutable() {
+        // Return cached result if available
+        if (this.gitExecutable) {
+            return this.gitExecutable;
+        }
         // Try common Git locations
         const commonPaths = [
             'git',
@@ -58,32 +63,63 @@ class GitCLI {
         ];
         for (const gitPath of commonPaths) {
             try {
-                await execFileAsync(gitPath, ['--version'], { timeout: 5000 });
-                return gitPath;
+                const { stdout } = await execFileAsync(gitPath, ['--version'], {
+                    timeout: 5000,
+                    encoding: 'utf8'
+                });
+                if (stdout && stdout.includes('git version')) {
+                    this.gitExecutable = gitPath;
+                    this.logger.debug(`Found Git executable at: ${gitPath}`);
+                    return gitPath;
+                }
             }
-            catch {
+            catch (error) {
+                this.logger.debug(`Git not found at ${gitPath}:`, error);
                 continue;
             }
         }
-        throw new Error('Git executable not found. Please ensure Git is installed and available in PATH.');
+        // If we can't find Git, fall back to 'git' and let the system handle it
+        // This preserves the original behavior where the extension would work if Git was in PATH
+        this.logger.debug('Could not find Git executable, falling back to "git"');
+        this.gitExecutable = 'git';
+        return 'git';
     }
     /**
-     * Execute a Git command with the given arguments
+     * Validate that Git is available and accessible
+     * This should be called early during extension activation
+     */
+    async validateGitAvailability() {
+        try {
+            const gitExecutable = await this.findGitExecutable();
+            // Try a simple git command to verify it works
+            await execFileAsync(gitExecutable, ['--version'], {
+                timeout: 5000,
+                encoding: 'utf8'
+            });
+            return true;
+        }
+        catch (error) {
+            this.logger.debug('Git validation failed, but extension will continue:', error);
+            return false;
+        }
+    }
+    /**
+     * Execute a Git command with the given arguments (public method for external use)
      */
     async executeGit(args, options = {}) {
+        return this.executeGitInternal(args, options);
+    }
+    /**
+     * Execute a Git command with the given arguments (internal implementation)
+     */
+    async executeGitInternal(args, options = {}) {
         const { cwd, timeout = this.defaultTimeout, signal, suppressExpectedErrors = false } = options;
         // Mask sensitive paths in logs
         const maskedArgs = args.map(arg => arg.includes('/') ? path.basename(arg) : arg);
         this.logger.debug(`Executing git command: git ${maskedArgs.join(' ')}`, { cwd });
         try {
-            // Try to find Git executable if not already cached
-            let gitExecutable = 'git';
-            try {
-                gitExecutable = await this.findGitExecutable();
-            }
-            catch (error) {
-                this.logger.warn('Could not find Git executable, using default "git"');
-            }
+            // Find Git executable - fail early if not available
+            const gitExecutable = await this.findGitExecutable();
             const { stdout, stderr } = await execFileAsync(gitExecutable, args, {
                 cwd,
                 timeout,
@@ -129,7 +165,7 @@ class GitCLI {
      */
     async isGitRepository(cwd) {
         try {
-            await this.executeGit(['rev-parse', '--git-dir'], { cwd });
+            await this.executeGitInternal(['rev-parse', '--git-dir'], { cwd, suppressExpectedErrors: true });
             return true;
         }
         catch {
@@ -140,14 +176,14 @@ class GitCLI {
      * Get the root directory of the Git repository
      */
     async getRepositoryRoot(cwd) {
-        const stdout = await this.executeGit(['rev-parse', '--show-toplevel'], { cwd });
+        const stdout = await this.executeGitInternal(['rev-parse', '--show-toplevel'], { cwd });
         return stdout.trim();
     }
     /**
      * List all worktrees in the repository
      */
     async listWorktrees(cwd, signal) {
-        const stdout = await this.executeGit(['worktree', 'list', '--porcelain'], { cwd, signal });
+        const stdout = await this.executeGitInternal(['worktree', 'list', '--porcelain'], { cwd, signal });
         return this.parseWorktreeList(stdout);
     }
     /**
@@ -162,13 +198,13 @@ class GitCLI {
             if (options.force) {
                 tempArgs.splice(2, 0, '--force');
             }
-            await this.executeGit(tempArgs, { cwd: repoPath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(tempArgs, { cwd: repoPath, signal, suppressExpectedErrors });
             // 2. Create orphan branch in the new worktree
-            await this.executeGit(['checkout', '--orphan', branch], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['checkout', '--orphan', branch], { cwd: worktreePath, signal, suppressExpectedErrors });
             // 3. Remove all files to make it truly empty
-            await this.executeGit(['rm', '-rf', '.'], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['rm', '-rf', '.'], { cwd: worktreePath, signal, suppressExpectedErrors });
             // 4. Clean up any remaining files
-            await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['clean', '-fd'], { cwd: worktreePath, signal, suppressExpectedErrors });
             return;
         }
         const args = ['worktree', 'add'];
@@ -182,7 +218,7 @@ class GitCLI {
         if (!options.newBranch) {
             args.push(branch);
         }
-        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
+        await this.executeGitInternal(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
     /**
      * Remove a worktree
@@ -195,14 +231,14 @@ class GitCLI {
         args.push(worktreePath);
         // Suppress expected errors for main working tree removal attempts
         const suppressExpectedErrors = true;
-        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
+        await this.executeGitInternal(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
     /**
      * Get the status of a worktree (clean/dirty)
      */
     async getWorktreeStatus(worktreePath, signal) {
         try {
-            const stdout = await this.executeGit(['status', '--porcelain'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['status', '--porcelain'], { cwd: worktreePath, signal });
             const lines = stdout.trim().split('\n').filter(line => line.length > 0);
             let staged = 0;
             let unstaged = 0;
@@ -232,7 +268,7 @@ class GitCLI {
      */
     async getCurrentBranch(worktreePath, signal) {
         try {
-            const stdout = await this.executeGit(['branch', '--show-current'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['branch', '--show-current'], { cwd: worktreePath, signal });
             const branch = stdout.trim();
             return branch || null;
         }
@@ -245,7 +281,7 @@ class GitCLI {
      * List all branches (local and remote)
      */
     async listBranches(cwd, signal) {
-        const stdout = await this.executeGit(['branch', '-a', '--format=%(refname:short)'], { cwd, signal });
+        const stdout = await this.executeGitInternal(['branch', '-a', '--format=%(refname:short)'], { cwd, signal });
         return stdout
             .trim()
             .split('\n')
@@ -330,20 +366,20 @@ class GitCLI {
      * Reset all changes in a worktree (git reset --hard)
      */
     async resetHard(worktreePath, signal) {
-        await this.executeGit(['reset', '--hard'], { cwd: worktreePath, signal });
+        await this.executeGitInternal(['reset', '--hard'], { cwd: worktreePath, signal });
     }
     /**
      * Clean untracked files in a worktree (git clean -fd)
      */
     async clean(worktreePath, signal) {
-        await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+        await this.executeGitInternal(['clean', '-fd'], { cwd: worktreePath, signal });
     }
     /**
      * Prune stale worktree entries (git worktree prune)
      */
     async pruneWorktrees(cwd, signal) {
         try {
-            await this.executeGit(['worktree', 'prune'], { cwd, signal });
+            await this.executeGitInternal(['worktree', 'prune'], { cwd, signal });
             this.logger.debug('Pruned stale worktree entries');
         }
         catch (error) {
@@ -352,11 +388,50 @@ class GitCLI {
         }
     }
     /**
+     * Fetch remote changes (git fetch)
+     */
+    async fetchRemote(cwd, signal) {
+        await this.executeGitInternal(['fetch'], { cwd, signal });
+        this.logger.debug('Fetched remote changes');
+    }
+    /**
+     * Get list of remote branches
+     */
+    async listRemoteBranches(cwd, signal) {
+        const stdout = await this.executeGitInternal(['branch', '-r'], { cwd, signal });
+        return stdout
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.includes('HEAD'))
+            .map(line => line.replace(/^origin\//, ''));
+    }
+    /**
+     * Get commit hash for a branch
+     */
+    async getBranchCommitHash(cwd, branch, signal) {
+        const stdout = await this.executeGitInternal(['rev-parse', branch], { cwd, signal });
+        return stdout.trim();
+    }
+    /**
+     * Check if local branch is behind remote
+     */
+    async isBranchBehindRemote(cwd, localBranch, remoteBranch, signal) {
+        try {
+            const localHash = await this.getBranchCommitHash(cwd, localBranch, signal);
+            const remoteHash = await this.getBranchCommitHash(cwd, `origin/${remoteBranch}`, signal);
+            return localHash !== remoteHash;
+        }
+        catch (error) {
+            this.logger.warn(`Failed to compare branch hashes for ${localBranch}`, error);
+            return false;
+        }
+    }
+    /**
      * Get detailed status including untracked files
      */
     async getStatus(worktreePath, signal) {
         try {
-            const stdout = await this.executeGit(['status', '--porcelain'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['status', '--porcelain'], { cwd: worktreePath, signal });
             const lines = stdout.trim().split('\n').filter(line => line.length > 0);
             let staged = 0;
             let unstaged = 0;

@@ -47,6 +47,11 @@ class BulkOperationsController {
                 action: 'createForAllBranches'
             },
             {
+                label: '☁️ Scan Remote Changes',
+                description: 'Check for new or updated remote branches and sync worktrees',
+                action: 'scanRemoteChanges'
+            },
+            {
                 label: '🗑️ Discard All Changes',
                 description: 'Discard uncommitted changes across all worktrees',
                 action: 'discardAllChanges'
@@ -77,6 +82,9 @@ class BulkOperationsController {
         switch (selected.action) {
             case 'createForAllBranches':
                 await this.createWorktreesForAllBranches();
+                break;
+            case 'scanRemoteChanges':
+                await vscode.commands.executeCommand('worktree.scanRemoteChanges');
                 break;
             case 'discardAllChanges':
                 await this.discardAllChanges();

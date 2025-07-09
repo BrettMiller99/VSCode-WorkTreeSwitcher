@@ -99,25 +99,43 @@ export class CommandController implements vscode.Disposable {
      */
     async createWorktree(): Promise<void> {
         try {
-            // Step 1: Get branch name (existing or new)
-            const branchChoice = await vscode.window.showQuickPick([
+            // Step 1: Select branch or create new one
+            const branches = await this.worktreeService.getBranchesWithoutWorktrees();
+            
+            if (branches.length === 0) {
+                vscode.window.showInformationMessage('No available branches to create worktrees from. All branches already have worktrees.');
+                return;
+            }
+
+            // Create QuickPick items for branches
+            const branchItems = branches.map(branch => ({
+                label: `🌱 ${branch}`,
+                description: 'Existing branch',
+                branch,
+                action: 'existing' as const
+            }));
+
+            // Add options for creating new branches
+            const newBranchItems = [
                 {
-                    label: '$(git-branch) Use existing branch',
-                    description: 'Create worktree from an existing branch',
-                    action: 'existing'
+                    label: '$(plus) Create new branch',
+                    description: 'Create a new branch and worktree',
+                    branch: '',
+                    action: 'new' as const
                 },
                 {
-                    label: '$(add) Create new branch',
-                    description: 'Create worktree with a new branch (based on current branch)',
-                    action: 'new'
-                },
-                {
-                    label: '$(file-add) Create orphan branch',
-                    description: 'Create worktree with a completely empty branch (no history)',
-                    action: 'orphan'
+                    label: '$(git-branch) Create orphan branch',
+                    description: 'Create a new orphan branch (no history)',
+                    branch: '',
+                    action: 'orphan' as const
                 }
-            ], {
-                placeHolder: 'How would you like to create the worktree?'
+            ];
+
+            const allItems = [...newBranchItems, ...branchItems];
+
+            const branchChoice = await vscode.window.showQuickPick(allItems, {
+                placeHolder: '🌿 Select a branch or create a new one',
+                title: 'Create Worktree - Select Branch'
             });
 
             if (!branchChoice) {
@@ -129,53 +147,29 @@ export class CommandController implements vscode.Disposable {
             let isOrphanBranch = false;
 
             if (branchChoice.action === 'existing') {
-                // Show existing branches
-                const branches = await this.worktreeService.getBranches();
-                const existingWorktrees = this.worktreeService.getWorktrees();
-                
-                // Filter out branches that already have worktrees
-                const availableBranches = branches.filter(branch => 
-                    !existingWorktrees.some(w => w.branch === branch || w.currentBranch === branch)
-                );
-
-                if (availableBranches.length === 0) {
-                    vscode.window.showInformationMessage('All branches already have worktrees');
-                    return;
-                }
-
-                const branchItems = availableBranches.map(branch => ({
-                    label: branch,
-                    description: branch.startsWith('origin/') ? 'Remote branch' : 'Local branch'
-                }));
-
-                const selectedBranch = await vscode.window.showQuickPick(branchItems, {
-                    placeHolder: 'Select a branch for the new worktree'
-                });
-
-                if (!selectedBranch) {
-                    return;
-                }
-
-                branchName = selectedBranch.label;
+                branchName = branchChoice.branch;
             } else if (branchChoice.action === 'new' || branchChoice.action === 'orphan') {
-                // Get new branch name
-                const promptText = branchChoice.action === 'orphan' 
-                    ? 'Enter the name for the new orphan branch (will be completely empty)'
-                    : 'Enter the name for the new branch';
-                    
+                // Get new branch name from user
                 const inputBranchName = await vscode.window.showInputBox({
-                    prompt: promptText,
+                    prompt: 'Enter the name for the new branch',
                     placeHolder: 'feature/my-feature',
                     validateInput: (value) => {
                         if (!value || value.trim().length === 0) {
                             return 'Branch name cannot be empty';
                         }
-                        if (value.includes(' ')) {
+                        
+                        // Basic validation for Git branch names
+                        const trimmedValue = value.trim();
+                        if (trimmedValue.includes(' ')) {
                             return 'Branch name cannot contain spaces';
                         }
-                        if (value.startsWith('-') || value.endsWith('-')) {
+                        if (trimmedValue.startsWith('-') || trimmedValue.endsWith('-')) {
                             return 'Branch name cannot start or end with a dash';
                         }
+                        if (trimmedValue.includes('..')) {
+                            return 'Branch name cannot contain consecutive dots';
+                        }
+                        
                         return null;
                     }
                 });
@@ -268,7 +262,8 @@ export class CommandController implements vscode.Disposable {
             } else {
                 // Show QuickPick to select worktree to remove
                 const worktrees = this.worktreeService.getWorktrees();
-                const removableWorktrees = worktrees.filter(w => !w.isActive); // Don't allow removing active worktree
+                // Allow removing any worktree, including the active one
+                const removableWorktrees = worktrees;
 
                 if (removableWorktrees.length === 0) {
                     vscode.window.showInformationMessage('No worktrees available to remove');
@@ -290,7 +285,7 @@ export class CommandController implements vscode.Disposable {
                 });
 
                 const selected = await vscode.window.showQuickPick(quickPickItems, {
-                    placeHolder: '🗑️ Select a worktree to remove (cannot remove current worktree)',
+                    placeHolder: '🗑️ Select a worktree to remove',
                     title: 'Remove Worktree'
                 });
 
@@ -323,6 +318,56 @@ export class CommandController implements vscode.Disposable {
             }
 
             const force = choice === 'Force Remove';
+            
+            // Check if we're trying to remove the main repository
+            const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const repoRoot = currentWorkspace ? await this.worktreeService.getRepositoryRoot(currentWorkspace) : null;
+            
+            if (repoRoot && worktreeToRemove.path === repoRoot) {
+                this.logger.warn('Attempt to remove main repository detected');
+                vscode.window.showWarningMessage(
+                    'Cannot remove the main Git repository. Only additional worktrees can be removed.',
+                    'OK'
+                );
+                return;
+            }
+            
+            // Check if we're removing the currently active worktree
+            const isRemovingActiveWorktree = worktreeToRemove.isActive;
+            this.logger.info(`Removing worktree: ${worktreeToRemove.name}, isActive: ${isRemovingActiveWorktree}`);
+            
+            // If removing the active worktree, switch to main worktree first
+            if (isRemovingActiveWorktree) {
+                this.logger.info('Attempting to switch to main worktree before removing active worktree...');
+                const mainWorktree = await this.worktreeService.getMainWorktree();
+                
+                if (mainWorktree) {
+                    this.logger.info(`Found main worktree: ${mainWorktree.path}`);
+                    if (mainWorktree.path !== worktreeToRemove.path) {
+                        this.logger.info(`Switching to main worktree: ${mainWorktree.path}`);
+                        try {
+                            // Explicitly set forceNewWindow to false to ensure we switch in the same window
+                            // This is important for the auto-switch functionality to work correctly
+                            await this.worktreeService.switchWorktree(mainWorktree.path, false);
+                            this.logger.info('Successfully initiated switch to main worktree');
+                            // Increase the delay to give VSCode more time to complete the switch before removing
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                            this.logger.info('Completed delay after switch, proceeding with removal');
+                        } catch (switchError) {
+                            this.logger.error('Failed to switch to main worktree:', switchError);
+                            throw new Error(`Failed to switch to main worktree before removal: ${switchError instanceof Error ? switchError.message : 'Unknown error'}`);
+                        }
+                    } else {
+                        // This should now be prevented by the check above, but keep as fallback
+                        this.logger.error('Cannot remove main repository - this should have been caught earlier');
+                        vscode.window.showErrorMessage('Cannot remove the main Git repository.');
+                        return;
+                    }
+                } else {
+                    this.logger.error('Could not find main worktree to switch to before removal');
+                    throw new Error('Cannot remove active worktree: Unable to find main worktree to switch to');
+                }
+            }
 
             // Remove the worktree
             await vscode.window.withProgress({
@@ -334,7 +379,6 @@ export class CommandController implements vscode.Disposable {
             });
 
             vscode.window.showInformationMessage(`Worktree "${worktreeToRemove.name}" removed successfully`);
-
         } catch (error) {
             // Check if this is an attempt to remove the main working tree
             if (error instanceof Error && error.message.includes('Cannot remove the main Git repository folder')) {
@@ -348,8 +392,6 @@ export class CommandController implements vscode.Disposable {
         }
     }
 
-
-
     /**
      * Refresh the worktree list
      */
@@ -357,14 +399,121 @@ export class CommandController implements vscode.Disposable {
         try {
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Window,
-                title: 'Refreshing worktrees...',
-                cancellable: false
+                title: 'Refreshing worktrees...'
             }, async () => {
                 await this.worktreeService.refresh();
             });
+            
+            vscode.window.showInformationMessage('Worktree list refreshed successfully');
         } catch (error) {
             this.logger.error('Failed to refresh worktrees', error);
             vscode.window.showErrorMessage(`Failed to refresh worktrees: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Scan for remote changes and offer to create worktrees for new branches
+     */
+    async scanRemoteChanges(): Promise<void> {
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Scanning for remote changes...',
+                cancellable: true
+            }, async (progress, token) => {
+                const remoteChanges = await this.worktreeService.scanRemoteChanges();
+                
+                if (remoteChanges.newBranches.length === 0 && remoteChanges.updatedBranches.length === 0) {
+                    vscode.window.showInformationMessage('No new remote changes found.');
+                    return;
+                }
+                
+                let message = '';
+                const actions: string[] = [];
+                
+                if (remoteChanges.newBranches.length > 0) {
+                    message += `Found ${remoteChanges.newBranches.length} new remote branch(es). `;
+                    actions.push('Create Worktrees');
+                }
+                
+                if (remoteChanges.updatedBranches.length > 0) {
+                    message += `Found ${remoteChanges.updatedBranches.length} updated branch(es). `;
+                    actions.push('Update Worktrees');
+                }
+                
+                if (actions.length > 0) {
+                    actions.push('View Details');
+                    
+                    const choice = await vscode.window.showInformationMessage(message, ...actions);
+                    
+                    if (choice === 'Create Worktrees') {
+                        await this.createWorktreesForNewBranches(remoteChanges.newBranches);
+                    } else if (choice === 'Update Worktrees') {
+                        await this.updateWorktreesWithRemoteChanges(remoteChanges.updatedBranches);
+                    } else if (choice === 'View Details') {
+                        // Show detailed information about changes
+                        const details = [
+                            `New branches: ${remoteChanges.newBranches.join(', ')}`,
+                            `Updated branches: ${remoteChanges.updatedBranches.map(u => u.branch).join(', ')}`
+                        ].filter(d => !d.includes(': ')).join('\n');
+                        
+                        vscode.window.showInformationMessage(details);
+                    }
+                }
+            });
+        } catch (error) {
+            this.logger.error('Failed to scan remote changes', error);
+            vscode.window.showErrorMessage(`Failed to scan remote changes: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Create worktrees for new branches found in remote
+     */
+    private async createWorktreesForNewBranches(branches: string[]): Promise<void> {
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Creating worktrees for ${branches.length} new branch(es)...`,
+                cancellable: true
+            }, async (progress, token) => {
+                await this.worktreeService.createWorktreesForNewBranches(branches, (branchName, current, total) => {
+                    progress.report({
+                        message: `Creating worktree for ${branchName} (${current}/${total})`,
+                        increment: (100 / total)
+                    });
+                });
+            });
+            
+            vscode.window.showInformationMessage(`Successfully created worktrees for ${branches.length} new branch(es).`);
+        } catch (error) {
+            this.logger.error('Failed to create worktrees for new branches', error);
+            vscode.window.showErrorMessage(`Failed to create worktrees: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Update existing worktrees with remote changes
+     */
+    private async updateWorktreesWithRemoteChanges(updates: { branch: string; worktreePath: string }[]): Promise<void> {
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `Updating ${updates.length} worktree(s) with remote changes...`,
+                cancellable: true
+            }, async (progress, token) => {
+                await this.worktreeService.updateWorktreesWithRemoteChanges(updates, (branchName, current, total) => {
+                    progress.report({
+                        message: `Updating worktree for ${branchName} (${current}/${total})`,
+                        increment: (100 / total)
+                    });
+                });
+            });
+            
+            vscode.window.showInformationMessage(`Successfully updated ${updates.length} worktree(s) with remote changes.`);
+        } catch (error) {
+            this.logger.error('Failed to update worktrees with remote changes', error);
+            vscode.window.showErrorMessage(`Failed to update worktrees: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 

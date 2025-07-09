@@ -51,6 +51,20 @@ export class WorktreeService implements vscode.Disposable {
     }
 
     /**
+     * Validate that Git is available and accessible
+     */
+    async validateGitAvailability(): Promise<boolean> {
+        return await this.gitCli.validateGitAvailability();
+    }
+
+    /**
+     * Get the repository root path for a given directory
+     */
+    async getRepositoryRoot(cwd: string): Promise<string> {
+        return await this.gitCli.getRepositoryRoot(cwd);
+    }
+
+    /**
      * Initialize the service by detecting the repository and loading worktrees
      */
     async initialize(): Promise<void> {
@@ -185,6 +199,86 @@ export class WorktreeService implements vscode.Disposable {
             this._onDidChangeWorktrees.fire(this.worktrees);
         } finally {
             this.isRefreshing = false;
+        }
+    }
+
+    /**
+     * Find the main worktree (repository root)
+     * Note: git worktree list doesn't include the main repository, so we create a synthetic entry if needed
+     */
+    async getMainWorktree(): Promise<WorktreeInfo | null> {
+        try {
+            // Get the repository root path
+            const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!currentWorkspace) {
+                return null;
+            }
+            
+            const repoRoot = await this.gitCli.getRepositoryRoot(currentWorkspace);
+            
+            // First, try to find the main worktree in the existing list
+            // (in case it's actually listed as a worktree in some Git configurations)
+            let mainWorktree = this.worktrees.find(w => w.path === repoRoot);
+            
+            if (mainWorktree) {
+                return mainWorktree;
+            }
+            
+            // If not found, create a synthetic main worktree entry
+            // This is normal because git worktree list doesn't include the main repository
+            this.logger.debug('Main repository not found in worktrees list, creating synthetic entry');
+            
+            try {
+                // Get information about the main repository
+                const [currentBranchResult, status, head] = await Promise.all([
+                    this.gitCli.getCurrentBranch(repoRoot).catch(() => null),
+                    this.gitCli.getWorktreeStatus(repoRoot).catch(() => ({ clean: true, staged: 0, unstaged: 0 })),
+                    this.gitCli.executeGit(['rev-parse', 'HEAD'], { cwd: repoRoot }).then(result => result.trim()).catch(() => '')
+                ]);
+                
+                // Handle null branch result by converting to undefined or fallback
+                const currentBranch = currentBranchResult || 'main';
+                
+                // Create synthetic main worktree info
+                const syntheticMainWorktree: WorktreeInfo = {
+                    path: repoRoot,
+                    name: path.basename(repoRoot),
+                    branch: currentBranch,
+                    currentBranch: currentBranch,
+                    head: head,
+                    status: status,
+                    isActive: currentWorkspace === repoRoot,
+                    bare: false,
+                    detached: false,
+                    locked: false,
+                    prunable: false
+                };
+                
+                this.logger.debug(`Created synthetic main worktree: ${repoRoot}`);
+                return syntheticMainWorktree;
+                
+            } catch (syntheticError) {
+                this.logger.warn('Failed to create synthetic main worktree info', syntheticError);
+                
+                // Return a minimal main worktree entry as last resort
+                return {
+                    path: repoRoot,
+                    name: path.basename(repoRoot),
+                    branch: 'main',
+                    currentBranch: 'main',
+                    head: '',
+                    status: { clean: true, staged: 0, unstaged: 0 },
+                    isActive: currentWorkspace === repoRoot,
+                    bare: false,
+                    detached: false,
+                    locked: false,
+                    prunable: false
+                };
+            }
+            
+        } catch (error) {
+            this.logger.error('Failed to find main worktree', error);
+            return null;
         }
     }
 
@@ -628,5 +722,133 @@ export class WorktreeService implements vscode.Disposable {
         
         // Dispose event emitter
         this._onDidChangeWorktrees.dispose();
+    }
+
+    /**
+     * Scan remote repository for new or updated branches
+     */
+    async scanRemoteChanges(): Promise<{
+        newBranches: string[];
+        updatedBranches: { branch: string; worktreePath: string }[];
+    }> {
+        try {
+            const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!currentWorkspace) {
+                throw new Error('No workspace folder found');
+            }
+
+            const repoRoot = await this.gitCli.getRepositoryRoot(currentWorkspace);
+            
+            // Fetch remote changes
+            this.logger.info('Fetching remote changes...');
+            await this.gitCli.fetchRemote(repoRoot);
+            
+            // Get remote branches
+            const remoteBranches = await this.gitCli.listRemoteBranches(repoRoot);
+            const localBranches = await this.gitCli.listBranches(repoRoot);
+            
+            // Find new branches (exist on remote but not locally)
+            const newBranches = remoteBranches.filter(remoteBranch => 
+                !localBranches.some(localBranch => 
+                    localBranch === remoteBranch || localBranch === `origin/${remoteBranch}`
+                )
+            );
+            
+            // Find updated branches (local branches that are behind their remote counterparts)
+            const updatedBranches: { branch: string; worktreePath: string }[] = [];
+            
+            for (const worktree of this.worktrees) {
+                if (worktree.currentBranch && !worktree.currentBranch.startsWith('origin/')) {
+                    const isBehind = await this.gitCli.isBranchBehindRemote(
+                        repoRoot, 
+                        worktree.currentBranch, 
+                        worktree.currentBranch
+                    );
+                    
+                    if (isBehind) {
+                        updatedBranches.push({
+                            branch: worktree.currentBranch,
+                            worktreePath: worktree.path
+                        });
+                    }
+                }
+            }
+            
+            this.logger.info(`Found ${newBranches.length} new branches and ${updatedBranches.length} updated branches`);
+            
+            return { newBranches, updatedBranches };
+            
+        } catch (error) {
+            this.logger.error('Failed to scan remote changes', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Create worktrees for new remote branches
+     */
+    async createWorktreesForNewBranches(
+        branches: string[], 
+        progressCallback?: (branch: string, index: number, total: number) => void
+    ): Promise<{ created: string[]; errors: { branch: string; error: string }[] }> {
+        const created: string[] = [];
+        const errors: { branch: string; error: string }[] = [];
+        
+        for (let i = 0; i < branches.length; i++) {
+            const branch = branches[i];
+            
+            try {
+                progressCallback?.(branch, i + 1, branches.length);
+                
+                // Create worktree for the remote branch
+                const worktreeName = this.configService.generateWorktreeName(branch);
+                const defaultLocation = this.configService.get<string>('defaultLocation');
+                const worktreePath = path.join(defaultLocation, worktreeName);
+                
+                await this.createWorktree(worktreeName, worktreePath, { newBranch: true });
+                created.push(branch);
+                
+                this.logger.info(`Created worktree for new branch: ${branch}`);
+                
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                errors.push({ branch, error: errorMessage });
+                this.logger.error(`Failed to create worktree for branch ${branch}`, error);
+            }
+        }
+        
+        return { created, errors };
+    }
+
+    /**
+     * Update existing worktrees with remote changes
+     */
+    async updateWorktreesWithRemoteChanges(
+        updates: { branch: string; worktreePath: string }[],
+        progressCallback?: (branch: string, index: number, total: number) => void
+    ): Promise<{ updated: string[]; errors: { branch: string; error: string }[] }> {
+        const updated: string[] = [];
+        const errors: { branch: string; error: string }[] = [];
+        
+        for (let i = 0; i < updates.length; i++) {
+            const { branch, worktreePath } = updates[i];
+            
+            try {
+                progressCallback?.(branch, i + 1, updates.length);
+                
+                // Pull latest changes in the worktree
+                await this.gitCli.executeGit(['pull'], { cwd: worktreePath });
+                updated.push(branch);
+                
+                this.logger.info(`Updated worktree for branch: ${branch}`);
+                
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                errors.push({ branch, error: errorMessage });
+                this.logger.error(`Failed to update worktree for branch ${branch}`, error);
+            }
+        }
+        
+        return { updated, errors };
     }
 }

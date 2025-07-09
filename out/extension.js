@@ -68,6 +68,7 @@ function activate(context) {
             vscode.commands.registerCommand('worktree.create', () => commandController.createWorktree()),
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
             vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
+            vscode.commands.registerCommand('worktree.scanRemoteChanges', () => commandController.scanRemoteChanges()),
             // Activity Bar specific commands
             vscode.commands.registerCommand('worktree.discardAllChanges', () => bulkOperationsController.discardAllChanges()),
             vscode.commands.registerCommand('worktree.createForAllBranches', () => bulkOperationsController.createWorktreesForAllBranches()),
@@ -75,6 +76,7 @@ function activate(context) {
         ];
         // Add all disposables to context
         context.subscriptions.push(treeView, activityBarTreeView, configService, ...commands, worktreeService, worktreeProvider, activityBarProvider, commandController, bulkOperationsController, statusBarManager, logger);
+        // Git validation removed - extension will handle Git errors gracefully during actual operations
         // Initial refresh to populate the tree view
         worktreeService.refresh();
         logger.info('Worktree Switcher extension activated successfully');

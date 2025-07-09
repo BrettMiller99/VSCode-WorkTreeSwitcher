@@ -2,7 +2,7 @@
   "name": "vscode-worktree-switcher",
   "displayName": "VSCode WorkTree Switcher",
   "description": "Comprehensive Git worktree management with Activity Bar integration, bulk operations, and advanced configuration",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "brettmiller",
   "license": "MIT",
   "repository": {
@@ -77,6 +77,12 @@
         "title": "Bulk Operations…",
         "category": "Worktree",
         "icon": "$(list-selection)"
+      },
+      {
+        "command": "worktree.scanRemoteChanges",
+        "title": "Scan Remote Changes",
+        "category": "Worktree",
+        "icon": "$(cloud-download)"
       }
     ],
     "viewsContainers": {

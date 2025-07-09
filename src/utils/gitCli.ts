@@ -37,6 +37,7 @@ export class GitCLI {
     private static readonly DEFAULT_TIMEOUT = 30000; // 30 seconds
     private logger: Logger;
     private defaultTimeout: number;
+    private gitExecutable: string | null = null;
 
     constructor(logger: Logger, defaultTimeout?: number) {
         this.logger = logger;
@@ -44,9 +45,14 @@ export class GitCLI {
     }
 
     /**
-     * Find Git executable with fallback locations
+     * Find Git executable with fallback locations and caching
      */
     private async findGitExecutable(): Promise<string> {
+        // Return cached result if available
+        if (this.gitExecutable) {
+            return this.gitExecutable;
+        }
+        
         // Try common Git locations
         const commonPaths = [
             'git', // Default PATH
@@ -58,20 +64,58 @@ export class GitCLI {
 
         for (const gitPath of commonPaths) {
             try {
-                await execFileAsync(gitPath, ['--version'], { timeout: 5000 });
-                return gitPath;
-            } catch {
+                const { stdout } = await execFileAsync(gitPath, ['--version'], { 
+                    timeout: 5000,
+                    encoding: 'utf8'
+                });
+                if (stdout && stdout.includes('git version')) {
+                    this.gitExecutable = gitPath;
+                    this.logger.debug(`Found Git executable at: ${gitPath}`);
+                    return gitPath;
+                }
+            } catch (error) {
+                this.logger.debug(`Git not found at ${gitPath}:`, error);
                 continue;
             }
         }
 
-        throw new Error('Git executable not found. Please ensure Git is installed and available in PATH.');
+        // If we can't find Git, fall back to 'git' and let the system handle it
+        // This preserves the original behavior where the extension would work if Git was in PATH
+        this.logger.debug('Could not find Git executable, falling back to "git"');
+        this.gitExecutable = 'git';
+        return 'git';
     }
 
     /**
-     * Execute a Git command with the given arguments
+     * Validate that Git is available and accessible
+     * This should be called early during extension activation
      */
-    private async executeGit(args: string[], options: GitCommandOptions = {}): Promise<string> {
+    async validateGitAvailability(): Promise<boolean> {
+        try {
+            const gitExecutable = await this.findGitExecutable();
+            // Try a simple git command to verify it works
+            await execFileAsync(gitExecutable, ['--version'], { 
+                timeout: 5000,
+                encoding: 'utf8'
+            });
+            return true;
+        } catch (error) {
+            this.logger.debug('Git validation failed, but extension will continue:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Execute a Git command with the given arguments (public method for external use)
+     */
+    async executeGit(args: string[], options: GitCommandOptions = {}): Promise<string> {
+        return this.executeGitInternal(args, options);
+    }
+
+    /**
+     * Execute a Git command with the given arguments (internal implementation)
+     */
+    private async executeGitInternal(args: string[], options: GitCommandOptions = {}): Promise<string> {
         const { cwd, timeout = this.defaultTimeout, signal, suppressExpectedErrors = false } = options;
         
         // Mask sensitive paths in logs
@@ -82,13 +126,8 @@ export class GitCLI {
         this.logger.debug(`Executing git command: git ${maskedArgs.join(' ')}`, { cwd });
 
         try {
-            // Try to find Git executable if not already cached
-            let gitExecutable = 'git';
-            try {
-                gitExecutable = await this.findGitExecutable();
-            } catch (error) {
-                this.logger.warn('Could not find Git executable, using default "git"');
-            }
+            // Find Git executable - fail early if not available
+            const gitExecutable = await this.findGitExecutable();
 
             const { stdout, stderr } = await execFileAsync(gitExecutable, args, {
                 cwd,
@@ -139,7 +178,7 @@ export class GitCLI {
      */
     async isGitRepository(cwd: string): Promise<boolean> {
         try {
-            await this.executeGit(['rev-parse', '--git-dir'], { cwd });
+            await this.executeGitInternal(['rev-parse', '--git-dir'], { cwd, suppressExpectedErrors: true });
             return true;
         } catch {
             return false;
@@ -150,7 +189,7 @@ export class GitCLI {
      * Get the root directory of the Git repository
      */
     async getRepositoryRoot(cwd: string): Promise<string> {
-        const stdout = await this.executeGit(['rev-parse', '--show-toplevel'], { cwd });
+        const stdout = await this.executeGitInternal(['rev-parse', '--show-toplevel'], { cwd });
         return stdout.trim();
     }
 
@@ -158,7 +197,7 @@ export class GitCLI {
      * List all worktrees in the repository
      */
     async listWorktrees(cwd: string, signal?: AbortSignal): Promise<GitWorktree[]> {
-        const stdout = await this.executeGit(['worktree', 'list', '--porcelain'], { cwd, signal });
+        const stdout = await this.executeGitInternal(['worktree', 'list', '--porcelain'], { cwd, signal });
         return this.parseWorktreeList(stdout);
     }
 
@@ -181,16 +220,16 @@ export class GitCLI {
             if (options.force) {
                 tempArgs.splice(2, 0, '--force');
             }
-            await this.executeGit(tempArgs, { cwd: repoPath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(tempArgs, { cwd: repoPath, signal, suppressExpectedErrors });
             
             // 2. Create orphan branch in the new worktree
-            await this.executeGit(['checkout', '--orphan', branch], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['checkout', '--orphan', branch], { cwd: worktreePath, signal, suppressExpectedErrors });
             
             // 3. Remove all files to make it truly empty
-            await this.executeGit(['rm', '-rf', '.'], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['rm', '-rf', '.'], { cwd: worktreePath, signal, suppressExpectedErrors });
             
             // 4. Clean up any remaining files
-            await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal, suppressExpectedErrors });
+            await this.executeGitInternal(['clean', '-fd'], { cwd: worktreePath, signal, suppressExpectedErrors });
             
             return;
         }
@@ -211,7 +250,7 @@ export class GitCLI {
             args.push(branch);
         }
 
-        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
+        await this.executeGitInternal(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
 
     /**
@@ -228,7 +267,7 @@ export class GitCLI {
 
         // Suppress expected errors for main working tree removal attempts
         const suppressExpectedErrors = true;
-        await this.executeGit(args, { cwd: repoPath, signal, suppressExpectedErrors });
+        await this.executeGitInternal(args, { cwd: repoPath, signal, suppressExpectedErrors });
     }
 
     /**
@@ -236,7 +275,7 @@ export class GitCLI {
      */
     async getWorktreeStatus(worktreePath: string, signal?: AbortSignal): Promise<{ clean: boolean; staged: number; unstaged: number }> {
         try {
-            const stdout = await this.executeGit(['status', '--porcelain'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['status', '--porcelain'], { cwd: worktreePath, signal });
             const lines = stdout.trim().split('\n').filter(line => line.length > 0);
             
             let staged = 0;
@@ -271,7 +310,7 @@ export class GitCLI {
      */
     async getCurrentBranch(worktreePath: string, signal?: AbortSignal): Promise<string | null> {
         try {
-            const stdout = await this.executeGit(['branch', '--show-current'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['branch', '--show-current'], { cwd: worktreePath, signal });
             const branch = stdout.trim();
             return branch || null;
         } catch (error) {
@@ -284,7 +323,7 @@ export class GitCLI {
      * List all branches (local and remote)
      */
     async listBranches(cwd: string, signal?: AbortSignal): Promise<string[]> {
-        const stdout = await this.executeGit(['branch', '-a', '--format=%(refname:short)'], { cwd, signal });
+        const stdout = await this.executeGitInternal(['branch', '-a', '--format=%(refname:short)'], { cwd, signal });
         return stdout
             .trim()
             .split('\n')
@@ -386,14 +425,14 @@ export class GitCLI {
      * Reset all changes in a worktree (git reset --hard)
      */
     async resetHard(worktreePath: string, signal?: AbortSignal): Promise<void> {
-        await this.executeGit(['reset', '--hard'], { cwd: worktreePath, signal });
+        await this.executeGitInternal(['reset', '--hard'], { cwd: worktreePath, signal });
     }
 
     /**
      * Clean untracked files in a worktree (git clean -fd)
      */
     async clean(worktreePath: string, signal?: AbortSignal): Promise<void> {
-        await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+        await this.executeGitInternal(['clean', '-fd'], { cwd: worktreePath, signal });
     }
 
     /**
@@ -401,7 +440,7 @@ export class GitCLI {
      */
     async pruneWorktrees(cwd: string, signal?: AbortSignal): Promise<void> {
         try {
-            await this.executeGit(['worktree', 'prune'], { cwd, signal });
+            await this.executeGitInternal(['worktree', 'prune'], { cwd, signal });
             this.logger.debug('Pruned stale worktree entries');
         } catch (error) {
             this.logger.warn('Failed to prune stale worktree entries', error);
@@ -410,11 +449,53 @@ export class GitCLI {
     }
 
     /**
+     * Fetch remote changes (git fetch)
+     */
+    async fetchRemote(cwd: string, signal?: AbortSignal): Promise<void> {
+        await this.executeGitInternal(['fetch'], { cwd, signal });
+        this.logger.debug('Fetched remote changes');
+    }
+
+    /**
+     * Get list of remote branches
+     */
+    async listRemoteBranches(cwd: string, signal?: AbortSignal): Promise<string[]> {
+        const stdout = await this.executeGitInternal(['branch', '-r'], { cwd, signal });
+        return stdout
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line && !line.includes('HEAD'))
+            .map(line => line.replace(/^origin\//, ''));
+    }
+
+    /**
+     * Get commit hash for a branch
+     */
+    async getBranchCommitHash(cwd: string, branch: string, signal?: AbortSignal): Promise<string> {
+        const stdout = await this.executeGitInternal(['rev-parse', branch], { cwd, signal });
+        return stdout.trim();
+    }
+
+    /**
+     * Check if local branch is behind remote
+     */
+    async isBranchBehindRemote(cwd: string, localBranch: string, remoteBranch: string, signal?: AbortSignal): Promise<boolean> {
+        try {
+            const localHash = await this.getBranchCommitHash(cwd, localBranch, signal);
+            const remoteHash = await this.getBranchCommitHash(cwd, `origin/${remoteBranch}`, signal);
+            return localHash !== remoteHash;
+        } catch (error) {
+            this.logger.warn(`Failed to compare branch hashes for ${localBranch}`, error);
+            return false;
+        }
+    }
+
+    /**
      * Get detailed status including untracked files
      */
     async getStatus(worktreePath: string, signal?: AbortSignal): Promise<{ clean: boolean; staged: number; unstaged: number; untracked: number }> {
         try {
-            const stdout = await this.executeGit(['status', '--porcelain'], { cwd: worktreePath, signal });
+            const stdout = await this.executeGitInternal(['status', '--porcelain'], { cwd: worktreePath, signal });
             const lines = stdout.trim().split('\n').filter(line => line.length > 0);
             
             let staged = 0;
