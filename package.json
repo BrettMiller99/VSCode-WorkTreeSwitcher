@@ -1,13 +1,23 @@
 {
   "name": "vscode-worktree-switcher",
-  "displayName": "Worktree Switcher",
-  "description": "Easily switch between Git worktrees in VS Code",
-  "version": "0.1.0",
+  "displayName": "VSCode WorkTree Switcher",
+  "description": "Comprehensive Git worktree management with Activity Bar integration, bulk operations, and advanced configuration",
+  "version": "1.0.0",
   "publisher": "brettmiller",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BrettMiller99/VSCode-WorkTreeSwitcher.git"
+  },
+  "homepage": "https://github.com/BrettMiller99/VSCode-WorkTreeSwitcher#readme",
+  "bugs": {
+    "url": "https://github.com/BrettMiller99/VSCode-WorkTreeSwitcher/issues"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
+    "SCM Providers",
     "Other"
   ],
   "keywords": [
@@ -15,7 +25,12 @@
     "worktree",
     "branch",
     "switch",
-    "workspace"
+    "workspace",
+    "scm",
+    "activity-bar",
+    "bulk-operations",
+    "orphan-branch",
+    "configuration"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -38,11 +53,7 @@
         "title": "Worktree: Remove…",
         "category": "Worktree"
       },
-      {
-        "command": "worktree.openFolder",
-        "title": "Worktree: Open Folder",
-        "category": "Worktree"
-      },
+
       {
         "command": "worktree.refresh",
         "title": "Worktree: Refresh",
@@ -81,14 +92,16 @@
         {
           "id": "worktreeExplorer",
           "name": "Worktrees",
-          "when": "workspaceFolderCount > 0"
+          "when": "workspaceFolderCount > 0",
+          "icon": "$(git-branch)"
         }
       ],
       "worktreeActivityBar": [
         {
           "id": "worktreeActivityView",
           "name": "Worktrees",
-          "when": "workspaceFolderCount > 0"
+          "when": "workspaceFolderCount > 0",
+          "icon": "$(git-branch)"
         }
       ]
     },
@@ -117,24 +130,21 @@
       ],
       "view/item/context": [
         {
-          "command": "worktree.openFolder",
+          "command": "worktree.switch",
           "when": "view == worktreeExplorer && viewItem == worktree",
-          "group": "inline"
+          "group": "inline@1"
         },
+
         {
           "command": "worktree.remove",
           "when": "view == worktreeExplorer && viewItem == worktree",
           "group": "context"
         },
-        {
-          "command": "worktree.openFolder",
-          "when": "view == worktreeActivityView && viewItem == worktree",
-          "group": "inline@1"
-        },
+
         {
           "command": "worktree.switch",
           "when": "view == worktreeActivityView && viewItem == worktree",
-          "group": "inline@2"
+          "group": "inline@1"
         },
         {
           "command": "worktree.remove",

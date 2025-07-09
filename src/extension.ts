@@ -44,10 +44,10 @@ export function activate(context: vscode.ExtensionContext) {
 
         // Register commands
         const commands = [
-            vscode.commands.registerCommand('worktree.switch', () => commandController.switchWorktree()),
+            vscode.commands.registerCommand('worktree.switch', (item) => commandController.switchWorktree(item)),
             vscode.commands.registerCommand('worktree.create', () => commandController.createWorktree()),
             vscode.commands.registerCommand('worktree.remove', (item) => commandController.removeWorktree(item)),
-            vscode.commands.registerCommand('worktree.openFolder', (item) => commandController.openFolder(item)),
+
             vscode.commands.registerCommand('worktree.refresh', () => commandController.refresh()),
             // Activity Bar specific commands
             vscode.commands.registerCommand('worktree.showActivityView', () => {

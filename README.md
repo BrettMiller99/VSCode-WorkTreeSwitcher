@@ -1,19 +1,29 @@
 # VSCode WorkTree Switcher
 
-A powerful Visual Studio Code extension for managing Git worktrees with an intuitive, visually distinctive interface that stands out from built-in Git tools.
+A comprehensive Visual Studio Code extension for managing Git worktrees with an intuitive, feature-rich interface that provides seamless worktree management across multiple views and interaction methods.
 
 ## ✨ Features
 
 ### 🎯 **Core Functionality**
-- **🌳 Tree View**: Dedicated sidebar panel for browsing all worktrees
-- **⚡ Quick Switch**: Lightning-fast worktree switching via Command Palette
-- **➕ Smart Creation**: Intelligent worktree creation with branch selection
-- **🗑️ Safe Removal**: Protected worktree removal with confirmation dialogs
-- **📂 Folder Management**: Open worktree folders in new VS Code windows
-- **🔄 Auto-refresh**: Automatic worktree list updates with configurable intervals
+- **🌳 Explorer Tree View**: Dedicated sidebar panel for browsing all worktrees with context menus
+- **🎯 Activity Bar Integration**: Dedicated Activity Bar view with direct click-to-switch functionality
+- **⚡ Quick Switch**: Lightning-fast worktree switching via Command Palette with configurable window behavior
+- **➕ Smart Creation**: Intelligent worktree creation with existing, new, and orphan branch options
+- **🗑️ Safe Removal**: Protected worktree removal with comprehensive confirmation system
+- **🔄 Auto-refresh**: Automatic worktree list updates with configurable intervals and manual refresh
+- **📊 Status Bar Integration**: Current worktree display with click-to-switch functionality
+
+### 🚀 **Advanced Operations**
+- **🔄 Bulk Operations**: Multi-worktree management capabilities:
+  - Bulk discard changes across all dirty worktrees
+  - Comprehensive status overview with interactive switching
+  - Bulk refresh all worktrees
+  - Clean untracked files from all worktrees
+- **🌱 Orphan Branch Creation**: Create completely empty branches with no history
+- **⚙️ Advanced Configuration**: Extensive customization options for power users
+- **🎯 Smart Window Management**: Configurable behavior for opening worktrees (same/new window/ask)
 
 ### 🎨 **Enhanced Visual Experience**
-- **📊 Smart Status Bar**: Current worktree info with click-to-switch functionality
 - **🚀 Distinctive Icons**: Worktree-specific visual identity:
   - 🏠 Current/Active worktree
   - 🚀 Feature branches
@@ -26,21 +36,30 @@ A powerful Visual Studio Code extension for managing Git worktrees with an intui
   - 🔴 Unstaged changes
   - 🔒 Locked worktrees
 - **💫 Enhanced QuickPick**: Rich dialogs with dual-icon system and contextual information
+- **📱 Multiple Views**: Consistent experience across Explorer, Activity Bar, and Command Palette
 
-### ⚙️ **Configuration & Customization**
-- **🔧 Flexible Settings**: Auto-refresh intervals, default locations
-- **👁️ Status Bar Control**: Toggle status bar visibility
-- **📝 Debug Logging**: Configurable log levels for troubleshooting
+### ⚙️ **Advanced Configuration**
+- **🔧 Git Operations**: Configurable timeouts, branch filtering, and naming patterns
+- **🎯 UI Customization**: Sorting preferences, display limits, and visibility controls
+- **🔒 Safety Features**: Confirmation dialogs for dangerous operations
+- **📝 Debug & Logging**: Comprehensive logging with configurable verbosity levels
 
 ## 🎮 Commands
 
 All commands are available via Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 
-- **🌳 `Worktree: Switch...`** - Enhanced quick-pick switcher with visual status indicators
-- **➕ `Worktree: Create...`** - Smart worktree creation with branch selection and path management
-- **🗑️ `Worktree: Remove...`** - Safe removal with confirmation (protects current worktree)
-- **📂 `Worktree: Open Folder`** - Open any worktree in a new VS Code window
+### 🎯 **Core Commands**
+- **🌳 `Worktree: Switch...`** - Enhanced quick-pick switcher with configurable window behavior
+- **➕ `Worktree: Create...`** - Smart worktree creation with existing/new/orphan branch options
+- **🗑️ `Worktree: Remove...`** - Safe removal with comprehensive confirmation system
 - **🔄 `Worktree: Refresh`** - Manually refresh the worktree list and status
+
+### 🚀 **Bulk Operations**
+- **📊 `Worktree: Bulk Operations...`** - Access bulk operations menu
+- **🗑️ `Worktree: Discard All Changes`** - Discard uncommitted changes across all dirty worktrees
+
+### 🎯 **View Management**
+- **🌳 `Worktree: Show Activity View`** - Open the dedicated Activity Bar view
 
 ## 🎨 Visual Design
 
@@ -60,10 +79,23 @@ This extension uses a unique visual language that makes it immediately recogniza
 
 Customize the extension behavior in VS Code Settings (`Cmd+,` / `Ctrl+,`):
 
+### 🎯 **Core Settings**
 - **`worktreeSwitcher.defaultLocation`** - Default directory for new worktrees (string)
 - **`worktreeSwitcher.autoRefresh`** - Auto-refresh interval in minutes (number, 0 = disabled)
 - **`worktreeSwitcher.logLevel`** - Logging verbosity ("error" | "warn" | "info" | "debug")
 - **`worktreeSwitcher.showStatusBar`** - Display current worktree in status bar (boolean, default: true)
+- **`worktreeSwitcher.showActivityBar`** - Show worktree view in Activity Bar (boolean, default: true)
+
+### 🚀 **Advanced Configuration**
+- **`worktreeSwitcher.gitTimeout`** - Git command timeout in seconds (5-120, default: 30)
+- **`worktreeSwitcher.worktreeNamePattern`** - Template for naming new worktrees with placeholders
+- **`worktreeSwitcher.excludeBranches`** - Array of patterns to exclude branches from listings
+- **`worktreeSwitcher.confirmDangerousOperations`** - Show confirmation dialogs for removals (boolean, default: true)
+- **`worktreeSwitcher.openInNewWindow`** - Window behavior ("always" | "never" | "ask", default: "ask")
+- **`worktreeSwitcher.maxWorktrees`** - Maximum worktrees to display (1-100, default: 50)
+- **`worktreeSwitcher.sortWorktreesBy`** - Sorting preference ("name" | "branchName" | "lastModified" | "creationDate")
+- **`worktreeSwitcher.showHiddenBranches`** - Show branches starting with '.' (boolean, default: false)
+- **`worktreeSwitcher.autoCleanupStale`** - Automatic cleanup of stale worktrees (boolean, default: false)
 
 ## 🧪 Testing
 
@@ -141,11 +173,17 @@ npm run compile
 
 ### Project Status
 
-✅ **Milestones 1-5 Complete**
-- Core architecture implemented
-- All main features working
-- TypeScript compilation successful
-- Ready for testing and refinement
+✅ **All Major Milestones Complete**
+- ✅ Core architecture and services implemented
+- ✅ Explorer Tree View with context menus
+- ✅ Activity Bar integration with direct switching
+- ✅ Status Bar integration with click-to-switch
+- ✅ Advanced configuration system
+- ✅ Bulk operations for multi-worktree management
+- ✅ Orphan branch creation support
+- ✅ Comprehensive error handling and logging
+- ✅ TypeScript compilation successful
+- ✅ Ready for production distribution
 
 ## Requirements
 
@@ -155,9 +193,26 @@ npm run compile
 
 ## Architecture
 
-The extension follows a clean architecture pattern:
-- **WorktreeService**: Core business logic and Git operations
-- **GitCLI**: Wrapper around Git commands with proper error handling
-- **WorktreeProvider**: Tree view data provider for the Explorer
-- **CommandController**: Handles user interactions and QuickPick UI
-- **Logger**: Centralized logging with configurable levels
+The extension follows a clean, modular architecture pattern:
+
+### 🎯 **Core Services**
+- **WorktreeService**: Core business logic, Git operations, and worktree management
+- **GitCLI**: Wrapper around Git commands with proper error handling and timeouts
+- **ConfigurationService**: Centralized configuration management with validation
+- **Logger**: Comprehensive logging system with configurable verbosity levels
+
+### 📱 **UI Components**
+- **WorktreeProvider**: Tree view data provider for Explorer sidebar
+- **ActivityBarProvider**: Dedicated Activity Bar view with direct switching
+- **StatusBarManager**: Status bar integration with current worktree display
+
+### 🎮 **Controllers**
+- **CommandController**: Handles user interactions, QuickPick UI, and command orchestration
+- **BulkOperationsController**: Multi-worktree operations and bulk management features
+
+### 🔧 **Architecture Benefits**
+- Clean separation of concerns
+- Comprehensive error handling throughout all layers
+- Configurable and extensible design
+- Consistent user experience across all views
+- Proper resource management and disposal

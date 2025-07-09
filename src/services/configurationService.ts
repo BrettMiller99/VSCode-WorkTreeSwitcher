@@ -164,6 +164,34 @@ export class ConfigurationService {
     }
 
     /**
+     * Determine window behavior for worktree switching, handling 'ask' option
+     */
+    public async determineWindowBehavior(): Promise<boolean> {
+        const behavior = this.getOpenInNewWindowBehavior();
+        
+        switch (behavior) {
+            case 'always':
+                return true;
+            case 'never':
+                return false;
+            case 'ask':
+                const choice = await vscode.window.showQuickPick(
+                    [
+                        { label: '🪟 Open in New Window', value: true },
+                        { label: '🔄 Switch in Current Window', value: false }
+                    ],
+                    {
+                        placeHolder: 'How would you like to open the worktree?',
+                        title: 'Window Behavior'
+                    }
+                );
+                return choice?.value ?? false; // Default to current window if cancelled
+            default:
+                return false;
+        }
+    }
+
+    /**
      * Validate configuration values
      */
     public validateConfiguration(): string[] {

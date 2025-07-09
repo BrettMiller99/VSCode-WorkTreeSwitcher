@@ -153,7 +153,6 @@ class WorktreeItem extends vscode.TreeItem {
         this.typeIcon = typeIcon;
         this.statusIcon = statusIcon;
         this.contextValue = 'worktree';
-        this.resourceUri = vscode.Uri.file(worktree.path);
         // Enhanced tooltip with full information
         this.tooltip = new vscode.MarkdownString();
         this.tooltip.appendMarkdown(`**${typeIcon} ${worktree.name || worktree.branch}** ${statusIcon}\n\n`);
@@ -175,7 +174,7 @@ class WorktreeItem extends vscode.TreeItem {
             this.command = {
                 command: 'worktree.switch',
                 title: 'Switch to Worktree',
-                arguments: [worktree]
+                arguments: [{ worktree: worktree }]
             };
         }
     }

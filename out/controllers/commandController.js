@@ -38,9 +38,24 @@ class CommandController {
         this.configService = configService;
     }
     /**
-     * Show QuickPick to switch between worktrees
+     * Switch to a specific worktree (from tree item) or show QuickPick to select one
      */
-    async switchWorktree() {
+    async switchWorktree(treeItem) {
+        // If called from tree item, switch directly to that worktree
+        if (treeItem && treeItem.worktree) {
+            try {
+                // Respect user configuration for window behavior
+                const openInNewWindow = await this.configService.determineWindowBehavior();
+                await this.worktreeService.switchWorktree(treeItem.worktree.path, openInNewWindow);
+                return;
+            }
+            catch (error) {
+                this.logger.error('Failed to switch to worktree from tree item', error);
+                vscode.window.showErrorMessage(`Failed to switch worktree: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                return;
+            }
+        }
+        // Otherwise show QuickPick (original behavior)
         try {
             const worktrees = this.worktreeService.getWorktrees();
             if (worktrees.length === 0) {
@@ -76,7 +91,7 @@ class CommandController {
                 title: 'Switch Worktree'
             });
             if (selected) {
-                const openInNewWindow = this.configService.shouldOpenInNewWindow();
+                const openInNewWindow = await this.configService.determineWindowBehavior();
                 await this.worktreeService.switchWorktree(selected.worktree.path, openInNewWindow);
             }
         }
@@ -99,8 +114,13 @@ class CommandController {
                 },
                 {
                     label: '$(add) Create new branch',
-                    description: 'Create worktree with a new branch',
+                    description: 'Create worktree with a new branch (based on current branch)',
                     action: 'new'
+                },
+                {
+                    label: '$(file-add) Create orphan branch',
+                    description: 'Create worktree with a completely empty branch (no history)',
+                    action: 'orphan'
                 }
             ], {
                 placeHolder: 'How would you like to create the worktree?'
@@ -110,6 +130,7 @@ class CommandController {
             }
             let branchName;
             let isNewBranch = false;
+            let isOrphanBranch = false;
             if (branchChoice.action === 'existing') {
                 // Show existing branches
                 const branches = await this.worktreeService.getBranches();
@@ -132,10 +153,13 @@ class CommandController {
                 }
                 branchName = selectedBranch.label;
             }
-            else {
+            else if (branchChoice.action === 'new' || branchChoice.action === 'orphan') {
                 // Get new branch name
+                const promptText = branchChoice.action === 'orphan'
+                    ? 'Enter the name for the new orphan branch (will be completely empty)'
+                    : 'Enter the name for the new branch';
                 const inputBranchName = await vscode.window.showInputBox({
-                    prompt: 'Enter the name for the new branch',
+                    prompt: promptText,
                     placeHolder: 'feature/my-feature',
                     validateInput: (value) => {
                         if (!value || value.trim().length === 0) {
@@ -155,6 +179,11 @@ class CommandController {
                 }
                 branchName = inputBranchName.trim();
                 isNewBranch = true;
+                isOrphanBranch = branchChoice.action === 'orphan';
+            }
+            else {
+                // Should not reach here, but handle gracefully
+                return;
             }
             // Step 2: Get worktree location
             const defaultLocation = this.worktreeService.getDefaultWorktreeLocation();
@@ -190,13 +219,15 @@ class CommandController {
                 cancellable: false
             }, async () => {
                 await this.worktreeService.createWorktree(branchName, worktreePath.trim(), {
-                    newBranch: isNewBranch
+                    newBranch: isNewBranch,
+                    orphan: isOrphanBranch
                 });
             });
             // Step 4: Ask if user wants to open the new worktree
             const openChoice = await vscode.window.showInformationMessage(`Worktree created successfully at ${worktreePath}`, 'Open Worktree', 'Stay Here');
             if (openChoice === 'Open Worktree') {
-                await this.worktreeService.switchWorktree(worktreePath.trim());
+                const openInNewWindow = await this.configService.determineWindowBehavior();
+                await this.worktreeService.switchWorktree(worktreePath.trim(), openInNewWindow);
             }
         }
         catch (error) {
@@ -270,51 +301,6 @@ class CommandController {
         catch (error) {
             this.logger.error('Failed to remove worktree', error);
             vscode.window.showErrorMessage(`Failed to remove worktree: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    }
-    /**
-     * Open a worktree folder in a new VS Code window
-     */
-    async openFolder(item) {
-        try {
-            let worktreeToOpen;
-            if (item && item.worktree) {
-                worktreeToOpen = item.worktree;
-            }
-            else {
-                // Show QuickPick to select worktree to open
-                const worktrees = this.worktreeService.getWorktrees();
-                if (worktrees.length === 0) {
-                    vscode.window.showInformationMessage('No worktrees found');
-                    return;
-                }
-                const quickPickItems = worktrees.map(worktree => {
-                    const typeIcon = this.getWorktreeTypeIcon(worktree);
-                    const statusIcon = this.getStatusIcon(worktree);
-                    const branchName = worktree.currentBranch || worktree.branch || 'Unknown branch';
-                    const statusText = this.getStatusText(worktree);
-                    const activeIndicator = worktree.isActive ? ' • CURRENT WORKSPACE' : '';
-                    return {
-                        label: `${typeIcon} ${worktree.name} ${statusIcon}`,
-                        description: `🌱 ${branchName}${activeIndicator}`,
-                        detail: `📂 ${worktree.path} • ${statusText}`,
-                        worktree
-                    };
-                });
-                const selected = await vscode.window.showQuickPick(quickPickItems, {
-                    placeHolder: '📂 Select a worktree to open in new window',
-                    title: 'Open Worktree Folder'
-                });
-                if (!selected) {
-                    return;
-                }
-                worktreeToOpen = selected.worktree;
-            }
-            await this.worktreeService.switchWorktree(worktreeToOpen.path);
-        }
-        catch (error) {
-            this.logger.error('Failed to open worktree folder', error);
-            vscode.window.showErrorMessage(`Failed to open worktree: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
     /**

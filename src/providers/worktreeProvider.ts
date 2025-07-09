@@ -16,10 +16,10 @@ export class WorktreeItem extends vscode.TreeItem {
         this.contextValue = 'worktree';
         this.resourceUri = vscode.Uri.file(worktree.path);
         
-        // Add command to open worktree on click
+        // Add command to switch to worktree on click (same window)
         this.command = {
-            command: 'worktree.openFolder',
-            title: 'Open Worktree',
+            command: 'worktree.switch',
+            title: 'Switch to Worktree',
             arguments: [this]
         };
     }

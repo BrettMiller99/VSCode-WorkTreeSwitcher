@@ -161,10 +161,26 @@ export class BulkOperationsController implements vscode.Disposable {
         try {
             const worktrees = await this.worktreeService.getWorktrees();
             
-            const statusItems = worktrees.map(worktree => {
+            // Generate status summary
+            let cleanCount = 0;
+            let dirtyCount = 0;
+            let stagedCount = 0;
+            let unstagedCount = 0;
+            
+            const statusDetails: string[] = [];
+            
+            for (const worktree of worktrees) {
                 const statusIcon = this.getStatusIcon(worktree);
                 const typeIcon = this.getTypeIcon(worktree);
                 const branchName = worktree.currentBranch || worktree.branch || 'unknown';
+                
+                if (worktree.status.clean && worktree.status.staged === 0 && worktree.status.unstaged === 0) {
+                    cleanCount++;
+                } else {
+                    dirtyCount++;
+                    if (worktree.status.staged > 0) stagedCount++;
+                    if (worktree.status.unstaged > 0) unstagedCount++;
+                }
                 
                 let statusText = 'Clean';
                 if (worktree.status.staged > 0) {
@@ -175,25 +191,69 @@ export class BulkOperationsController implements vscode.Disposable {
                         `${worktree.status.unstaged} unstaged` : 
                         `, ${worktree.status.unstaged} unstaged`;
                 }
+                
+                statusDetails.push(`${typeIcon} ${worktree.name} ${statusIcon} - ${branchName} (${statusText})`);
+            }
+            
+            // Show status summary first
+            const summaryMessage = `📊 Worktree Status Summary:\n\n` +
+                `Total: ${worktrees.length} worktrees\n` +
+                `🟢 Clean: ${cleanCount}\n` +
+                `🔴 With changes: ${dirtyCount}\n` +
+                (stagedCount > 0 ? `🟡 With staged changes: ${stagedCount}\n` : '') +
+                (unstagedCount > 0 ? `🔴 With unstaged changes: ${unstagedCount}\n` : '') +
+                `\nDetailed Status:\n${statusDetails.join('\n')}`;
+            
+            // Show summary in information message with options
+            const action = await vscode.window.showInformationMessage(
+                `📊 Status Summary: ${cleanCount} clean, ${dirtyCount} with changes`,
+                'View Details',
+                'Switch to Worktree',
+                'Show in Output'
+            );
+            
+            if (action === 'View Details' || action === 'Switch to Worktree') {
+                // Show detailed picker for switching
+                const statusItems = worktrees.map(worktree => {
+                    const statusIcon = this.getStatusIcon(worktree);
+                    const typeIcon = this.getTypeIcon(worktree);
+                    const branchName = worktree.currentBranch || worktree.branch || 'unknown';
+                    
+                    let statusText = 'Clean';
+                    if (worktree.status.staged > 0) {
+                        statusText = `${worktree.status.staged} staged`;
+                    }
+                    if (worktree.status.unstaged > 0) {
+                        statusText += statusText === 'Clean' ? 
+                            `${worktree.status.unstaged} unstaged` : 
+                            `, ${worktree.status.unstaged} unstaged`;
+                    }
 
-                return {
-                    label: `${typeIcon} ${worktree.name} ${statusIcon}`,
-                    description: `${branchName} • ${statusText}`,
-                    detail: worktree.path,
-                    worktree
-                };
-            });
+                    return {
+                        label: `${typeIcon} ${worktree.name} ${statusIcon}`,
+                        description: `${branchName} • ${statusText}`,
+                        detail: worktree.path,
+                        worktree
+                    };
+                });
 
-            const selected = await vscode.window.showQuickPick(statusItems, {
-                placeHolder: '📊 Worktree Status Overview - Select a worktree to switch to it',
-                title: `Bulk Status Check (${worktrees.length} worktrees)`,
-                matchOnDescription: true,
-                matchOnDetail: true
-            });
+                const selected = await vscode.window.showQuickPick(statusItems, {
+                    placeHolder: action === 'Switch to Worktree' ? 
+                        '🔀 Select a worktree to switch to' : 
+                        '📊 Worktree Status Details (ESC to close)',
+                    title: `Bulk Status Check (${worktrees.length} worktrees)`,
+                    matchOnDescription: true,
+                    matchOnDetail: true
+                });
 
-            if (selected) {
-                // Switch to selected worktree
-                await this.worktreeService.switchWorktree(selected.worktree.path);
+                if (selected && action === 'Switch to Worktree') {
+                    const openInNewWindow = await this.configService.determineWindowBehavior();
+                    await this.worktreeService.switchWorktree(selected.worktree.path, openInNewWindow);
+                }
+            } else if (action === 'Show in Output') {
+                // Show detailed status in output panel
+                this.logger.info('Bulk Status Check Results:\n' + summaryMessage);
+                vscode.window.showInformationMessage('📊 Detailed status written to output panel');
             }
 
         } catch (error) {

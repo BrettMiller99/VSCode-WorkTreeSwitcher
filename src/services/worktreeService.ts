@@ -231,9 +231,10 @@ export class WorktreeService implements vscode.Disposable {
                 throw new Error(`Worktree path does not exist: ${worktreePath}`);
             }
 
-            // Open the worktree in a new window or current window based on configuration
+            // Open the worktree in a new window or current window
             const uri = vscode.Uri.file(worktreePath);
-            const openInNewWindow = forceNewWindow ?? true; // Default to new window for backward compatibility
+            // If forceNewWindow is explicitly set, use it; otherwise default to same window
+            const openInNewWindow = forceNewWindow ?? false;
             await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: openInNewWindow });
             
             this.logger.info(`Successfully switched to worktree: ${worktreePath}`);
@@ -249,7 +250,7 @@ export class WorktreeService implements vscode.Disposable {
     async createWorktree(
         branch: string,
         worktreePath: string,
-        options: { newBranch?: boolean; force?: boolean } = {}
+        options: { newBranch?: boolean; force?: boolean; orphan?: boolean } = {}
     ): Promise<void> {
         if (!this.repositoryRoot) {
             throw new Error('No Git repository found');

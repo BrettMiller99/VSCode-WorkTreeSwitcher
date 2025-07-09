@@ -118,9 +118,31 @@ export class GitCLI {
         repoPath: string,
         worktreePath: string,
         branch: string,
-        options: { newBranch?: boolean; force?: boolean } = {},
+        options: { newBranch?: boolean; force?: boolean; orphan?: boolean } = {},
         signal?: AbortSignal
     ): Promise<void> {
+        if (options.orphan) {
+            // For orphan branches, we need a different approach since git worktree add doesn't support --orphan
+            // 1. Create worktree with a temporary branch
+            const tempBranch = `temp-${Date.now()}`;
+            const tempArgs = ['worktree', 'add', '-b', tempBranch, worktreePath];
+            if (options.force) {
+                tempArgs.splice(2, 0, '--force');
+            }
+            await this.executeGit(tempArgs, { cwd: repoPath, signal });
+            
+            // 2. Create orphan branch in the new worktree
+            await this.executeGit(['checkout', '--orphan', branch], { cwd: worktreePath, signal });
+            
+            // 3. Remove all files to make it truly empty
+            await this.executeGit(['rm', '-rf', '.'], { cwd: worktreePath, signal });
+            
+            // 4. Clean up any remaining files
+            await this.executeGit(['clean', '-fd'], { cwd: worktreePath, signal });
+            
+            return;
+        }
+        
         const args = ['worktree', 'add'];
         
         if (options.force) {

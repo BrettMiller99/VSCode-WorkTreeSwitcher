@@ -149,7 +149,6 @@ export class WorktreeItem extends vscode.TreeItem {
         );
 
         this.contextValue = 'worktree';
-        this.resourceUri = vscode.Uri.file(worktree.path);
         
         // Enhanced tooltip with full information
         this.tooltip = new vscode.MarkdownString();
@@ -173,7 +172,7 @@ export class WorktreeItem extends vscode.TreeItem {
             this.command = {
                 command: 'worktree.switch',
                 title: 'Switch to Worktree',
-                arguments: [worktree]
+                arguments: [{ worktree: worktree }]
             };
         }
     }
