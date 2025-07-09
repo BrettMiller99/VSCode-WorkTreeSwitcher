@@ -5,6 +5,25 @@ All notable changes to the VSCode WorkTree Switcher extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-07-09
+
+### Fixed
+- **🛡️ Main Repository Protection**
+  - Fixed warning "Main worktree path is the same as worktree to remove - this should not happen"
+  - Prevented users from accidentally removing the main Git repository
+  - Added clear error message: "Cannot remove the main Git repository. Only additional worktrees can be removed."
+  - Enhanced repository root detection and path comparison logic
+
+- **🔧 Improved Auto-Switch Logic**
+  - Fixed edge case where main repository was treated as removable worktree
+  - Enhanced error handling for worktree removal operations
+  - Added `getRepositoryRoot()` method to WorktreeService for better repository detection
+
+- **🚀 Enhanced User Experience**
+  - Eliminated confusing warning messages during worktree operations
+  - Improved error messages with actionable guidance
+  - Better handling of edge cases in Git repository configurations
+
 ## [1.1.0] - 2025-07-09
 
 ### Added
